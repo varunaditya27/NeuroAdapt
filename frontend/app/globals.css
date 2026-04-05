@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* NeuroAdapt Design System */
+  --bg:        #F7F6F2;
+  --surface:   #FFFFFF;
+  --border:    #E4E2DA;
+  --navy:      #1B2A4A;
+  --teal:      #2A9D8F;
+  --teal-soft: #E8F5F3;
+  --text:      #1C1C1E;
+  --muted:     #6B7280;
+  --danger:    #E76F51;
+  --radius:    12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--text);
+  background: var(--bg);
+  font-family: 'DM Sans', Arial, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
