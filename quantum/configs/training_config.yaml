@@ -1,0 +1,6 @@
+episodes: 300
+steps_per_episode: 20
+learning_rate: 0.001
+checkpoint_every: 50
+model: quantum
+wandb_project: neuroadapt-ddqn
