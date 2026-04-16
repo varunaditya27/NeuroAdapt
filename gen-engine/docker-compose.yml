@@ -1,0 +1,38 @@
+# gen-engine Docker Compose Stack
+# Local development environment with all services
+#
+# STARTUP:
+#   docker-compose up -d
+#
+# SERVICES:
+#   - gen-engine: FastAPI server (port 8001)
+#   - ollama: Gemma 4 E2B LLM service (port 11434)
+#   - kokoro-tts: Audio generation service (port 8880)
+#   - prometheus: Metrics collection (port 9090)
+#
+# DEPENDENCIES:
+#   - Docker Engine 20.10+
+#   - Docker Compose 1.29+
+#   - ~30GB disk space (models + containers)
+#
+# NOTES:
+#   - All services on single 'neuroadapt' network
+#   - Volumes for model persistence
+#   - Environment variables for service discovery
+#   - Health checks for readiness probes
+
+version: '3.8'
+
+services:
+  # TODO: Define ollama service
+  # TODO: Define kokoro-tts service
+  # TODO: Define gen-engine service
+  # TODO: Define prometheus service (optional)
+  # TODO: Define networks (neuroadapt)
+  # TODO: Define volumes (ollama-models, kokoro-voices)
+
+# ENVIRONMENT VARIABLES (set in .env):
+# TODO: OLLAMA_URL=http://ollama:11434
+# TODO: TTS_URL=http://kokoro-tts:8880
+# TODO: LOG_LEVEL=INFO
+# TODO: GENERATION_CACHE_SIZE=500

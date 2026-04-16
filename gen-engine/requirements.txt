@@ -1,0 +1,39 @@
+# gen-engine Python Dependencies
+# See gen-engine/docs/knowledge_bank.md for setup instructions
+
+# Core Framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.0
+
+# LLM Integration
+ollama==0.4.1                    # Python client for Ollama API
+requests==2.32.3
+
+# Text Processing
+textstat==0.7.3                  # Flesch-Kincaid scoring
+spacy==3.8.2                     # Sentence tokenization for chunking
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# Image Generation
+diffusers==0.31.0                # Stable Diffusion pipeline
+transformers==4.46.0
+torch==2.5.0                     # PyTorch (CPU-only for now)
+Pillow==11.0.0
+
+# Audio Processing
+pydub==0.25.1                    # WAV manipulation
+numpy==2.1.0
+
+# Animation (Manim)
+# manim==0.18.1                  # Optional, install separately: pip install manim
+
+# Utilities
+python-dotenv==1.0.1
+tenacity==9.0.0                  # Retry logic
+prometheus-client==0.21.0        # Metrics export
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2                    # Async HTTP client for tests
