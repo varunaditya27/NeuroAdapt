@@ -5,9 +5,10 @@
 
 *Transforming content into whatever format the learner's brain needs right now.*
 
-[![LLaMA-3](https://img.shields.io/badge/LLM-LLaMA--3_via_Ollama-ff6b35)](https://ollama.com)
-[![Stable Diffusion](https://img.shields.io/badge/Vision-Stable_Diffusion-purple)](https://stability.ai)
-[![Coqui TTS](https://img.shields.io/badge/Audio-Coqui_TTS-green)](https://coqui.ai)
+[![Gemma 4 E2B](https://img.shields.io/badge/LLM-Gemma_4_E2B-4285F4?logo=google)](https://ai.google.dev/gemma)
+[![Manim](https://img.shields.io/badge/Animation-Manim-orange)](https://www.manim.community/)
+[![Kokoro TTS](https://img.shields.io/badge/Audio-Kokoro_TTS-green)](https://github.com/remsky/kokoro-fastapi)
+[![LivePortrait](https://img.shields.io/badge/Avatar-LivePortrait-purple)](https://github.com/KwaiVGI/LivePortrait)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-teal)](https://fastapi.tiangolo.com)
 
 > **Primary Owner:** Varun Aditya
@@ -23,9 +24,14 @@ The `gen-engine/` module is an independent FastAPI microservice that executes th
 
 Key responsibilities:
 - **Text simplification** with Flesch-Kincaid verification
+- **STEM animation generation** with Manim for abstract concepts
 - **Visual synthesis** with autism-safe content constraints
-- **Calm-preset audio** generation
+- **Calm-preset audio** generation with voice cloning
+- **Avatar video creation** with lip-sync narration
 - **Mastery-scaled gamified tasks**
+- **Analogy generation** as escape hatch for complex concepts
+- **Typography morphing** based on cognitive state
+- **Hyperfocus protection** to preserve productive focus states
 - **Async pre-fetching** of the next likely format before the learner needs it
 
 ---
@@ -34,31 +40,93 @@ Key responsibilities:
 
 ```
 gen-engine/
-├── main.py                     # FastAPI entry for generation service
+├── main.py                          # FastAPI entry point
+├── requirements.txt                 # All dependencies pinned
+├── Dockerfile                       # Production container
+├── docker-compose.yml               # Local dev stack
+│
 ├── routers/
-│   └── generate.py             # POST /api/generate — dispatches by action_id
+│   ├── generate.py                  # POST /api/generate — action dispatcher
+│   └── health.py                    # GET /health — readiness probe
 │
 ├── generators/
-│   ├── text_simplify.py        # LLaMA-3 rewriter + FK verification loop
-│   ├── image_gen.py            # Stable Diffusion + autism-safe negative prompts
-│   ├── tts.py                  # Coqui TTS calm preset wrapper
-│   ├── quiz_injector.py        # Gamified task builder (mastery-scaled difficulty)
-│   └── avatar_video.py         # HeyGen API wrapper (optional / premium tier)
+│   ├── text_simplify.py            # Gemma 4 E2B + FK verification loop (Tier 2)
+│   ├── quiz_injector.py            # Template + LLM hybrid MCQ (Tier 2)
+│   ├── analogy_engine.py           # Escape hatch: 3 analogies on-demand (Tier 2)
+│   ├── manim_gen.py                # Writer-Reviewer Manim loop (Tier 3)
+│   ├── image_gen.py                # SD 1.5 + autism-safe constraints (Tier 3)
+│   ├── kokoro_tts.py               # Kokoro Docker wrapper + voice cloning (Tier 3)
+│   ├── liveportrait_avatar.py      # Audio → lip-sync video (Tier 3)
+│   ├── chunk_renderer.py           # Progressive text reveal (Tier 1)
+│   └── typography_morpher.py       # CSS state machine (Tier 1)
 │
-├── prefetch/
-│   ├── prefetch_manager.py     # Async background generation of top-N format variants
-│   └── latency_budget.py       # Per-modality timeout config + graceful fallback
+├── orchestration/
+│   ├── action_router.py            # Tier classification + dispatch logic
+│   ├── hyperfocus_gate.py          # Pre-emption: protect hyperfocus states
+│   ├── prefetch_manager.py         # Async background generation
+│   └── latency_budget.py           # Per-modality timeouts + fallback chain
 │
 ├── prompts/
-│   ├── simplify_grade5.txt     # Few-shot prompt templates by reading level
-│   ├── simplify_grade8.txt
-│   ├── simplify_university.txt
-│   └── image_gen_base.txt      # Base Stable Diffusion prompt + negative block
+│   ├── simplify_grade5.txt         # Few-shot FK ≤ 6.0
+│   ├── simplify_grade8.txt         # Few-shot FK ≤ 9.0
+│   ├── simplify_university.txt     # Few-shot FK ≤ 13.0
+│   ├── manim_expert.txt            # Manim code generation system prompt
+│   ├── manim_reviewer.txt          # Error correction reviewer prompt
+│   ├── analogy_generator.txt       # 3-analogy escape hatch prompt
+│   └── image_gen_base.txt          # SD base prompt + autism-safe negative block
+│
+├── models/
+│   ├── request_schemas.py          # Pydantic input validation
+│   └── response_schemas.py         # Pydantic output serialization
 │
 └── __tests__/
-    ├── test_text_simplify.py   # FK score verification of outputs
-    ├── test_quiz_injector.py
-    └── test_prefetch.py        # Latency budget enforcement
+    ├── test_text_simplify.py       # FK score verification
+    ├── test_manim_loop.py          # Writer-Reviewer error recovery
+    ├── test_prefetch.py            # Latency budget enforcement
+    └── test_hyperfocus.py          # Pre-emption gate logic
+```
+
+---
+
+## 🏗️ Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph TIER1["⚡ Tier 1: Instant < 1s"]
+        T1A[Concept Chunker\nProgressive reveal]
+        T1B[Typography Morpher\nCSS state machine]
+        style T1A fill:#4CAF50
+        style T1B fill:#4CAF50
+    end
+
+    subgraph TIER2["🔄 Tier 2: Fast 2-5s"]
+        T2A[Text Simplifier\nGemma 4 E2B]
+        T2B[Quiz Injector\nTemplate + LLM]
+        T2C[Analogy Engine\nEscape hatch]
+        style T2A fill:#2196F3
+        style T2B fill:#2196F3
+        style T2C fill:#2196F3
+    end
+
+    subgraph TIER3["🎬 Tier 3: Async 10-45s"]
+        T3A[Manim Generator]
+        T3B[Image Generator\nStable Diffusion]
+        T3C[Kokoro TTS]
+        T3D[LivePortrait Avatar]
+        style T3A fill:#FF9800
+        style T3B fill:#FF9800
+        style T3C fill:#FF9800
+        style T3D fill:#FF9800
+    end
+
+    ORC[⚛️ Orchestrator\naction_id + confidence] --> ROUTER{Action Router}
+    ROUTER --> TIER1
+    ROUTER --> TIER2
+    ROUTER --> TIER3
+    
+    TIER3 --> PREFETCH[Pre-fetch Manager\nBackground generation]
+    PREFETCH --> CACHE[In-memory cache]
+    CACHE --> FE[🖥️ Frontend]
 ```
 
 ---
@@ -70,9 +138,9 @@ sequenceDiagram
     participant OR as Orchestrator
     participant BE as Backend
     participant GE as gen-engine
-    participant LLM as LLaMA-3 (Ollama)
+    participant LLM as Gemma 4 E2B (Ollama)
     participant SD as Stable Diffusion
-    participant TTS as Coqui TTS
+    participant TTS as Kokoro TTS
 
     OR->>BE: action_id=2, confidence=0.74
     BE->>GE: POST /api/generate
@@ -85,10 +153,11 @@ sequenceDiagram
         GE->>GE: FK score check ≥ target?
         GE->>LLM: Re-try with stricter prompt if needed
         GE->>BE: Simplified text (verified)
-    else action_id = 3 (Video)
-        GE->>SD: Generate illustration sequence
+    else action_id = 3 (STEM Video)
+        GE->>LLM: Generate Manim code for concept
+        GE->>GE: Manim render to MP4
         GE->>TTS: Generate calm narration WAV
-        GE->>BE: {images[], audio_url}
+        GE->>BE: {video_url, audio_url}
     else action_id = 4 (Gamified Task)
         GE->>GE: quiz_injector — mastery-scaled MCQ
         GE->>BE: {quiz_json}
@@ -103,7 +172,7 @@ Simply calling an LLM with "simplify this" is insufficient. The output must be *
 
 ```mermaid
 flowchart TD
-    A[Original slide content] --> B[LLaMA-3 simplify
+    A[Original slide content] --> B[Gemma 4 E2B simplify
 to target FK level]
     B --> C[Compute FK score
 on output]
@@ -153,7 +222,7 @@ The base positive prompt template (from `prompts/image_gen_base.txt`) emphasises
 
 ## 🔊 Audio Generation — The Calm Preset
 
-`tts.py` wraps Coqui TTS with a fixed preset optimised for neurodivergent learners:
+`kokoro_tts.py` wraps Kokoro TTS with a fixed preset optimised for neurodivergent learners:
 
 | Parameter | Value | Reason |
 |---|---|---|
@@ -163,7 +232,8 @@ The base positive prompt template (from `prompts/image_gen_base.txt`) emphasises
 | Background music | None | Zero competing auditory stimuli |
 | Sentence pause | +20% longer | Executive function needs transition time |
 
-**Fallback chain:** Coqui TTS (local, free) → ElevenLabs (cloud, premium) → Web Speech API (browser native).
+**Voice Cloning:** 10-second sample → cloned voice for familiarity.  
+**Fallback chain:** Kokoro TTS (local, free) → ElevenLabs (cloud, premium) → Web Speech API (browser native).
 
 ---
 
@@ -190,6 +260,50 @@ with encouragement framing]
 ```
 
 > 🎯 Correct answers to the gamified task update the `mastery_score` in Postgres, which feeds back into future difficulty calibration.
+
+---
+
+## 🎬 Manim Animation Generation — STEM Concept Visualization
+
+For abstract STEM concepts (math, physics, algorithms), static images fail. Manim generates **pedagogy-aware animations** that show the concept dynamically.
+
+**Writer-Reviewer Loop:**
+```mermaid
+flowchart TD
+    A[Concept + slide content] --> B[Gemma 4 E2B generates
+Manim Python code]
+    B --> C[Execute code in sandbox]
+    C --> D{Syntax/render error?}
+    D -->|Yes| E[Gemma 4 reviews error
++ generates fix]
+    E --> C
+    D -->|No| F[Render MP4 animation]
+```
+
+**Research-Backed:** LLM2Manim (2026) shows animations improve learning gains by d=0.67 vs. static slides, especially for low-prior-knowledge learners.
+
+---
+
+## 🧠 Analogy Engine — Escape Hatch for Complex Concepts
+
+When direct simplification fails, generate **3 analogies** to explain the concept through familiar domains.
+
+**Example:** For "Neural Networks" →  
+1. **Brain Analogy:** Like neurons firing in your brain  
+2. **Traffic Analogy:** Cars routing through intersections  
+3. **Recipe Analogy:** Ingredients combining to make a dish
+
+**Research:** Analogies improve problem-solving success from 10% to 80% with multiple examples (Gick & Holyoak, 1980s).
+
+---
+
+## 🛡️ Hyperfocus Protective Gate
+
+Rare ADHD hyperfocus states are **protected** — no interventions when `hyperfocus_composite > 0.75`.
+
+**Mechanism:** Pre-emption check overrides Orchestrator to `action_id = 0`, blocks UI changes.
+
+**Research:** Hyperfocus enhances productivity/creativity; protecting it preserves flow (Russell Barkley, Nadeau studies).
 
 ---
 
@@ -225,10 +339,12 @@ sequenceDiagram
 
 | Modality | Target | Hard Timeout | Fallback |
 |---|---|---|---|
-| Text simplification (LLaMA-3 local) | < 3s | 5s | Serve original text |
-| Audio TTS (Coqui) | < 2s | 3s | Serve text only |
+| Text simplification (Gemma 4 E2B local) | < 3s | 5s | Serve original text |
+| Analogy generation (Gemma 4 E2B) | < 2s | 3s | Skip analogy |
+| Audio TTS (Kokoro) | < 2s | 3s | Serve text only |
 | Image generation (Stable Diffusion) | < 8s | 12s | Serve text + audio |
-| Avatar video (HeyGen) | < 15s | 20s | Serve illustrated narrative |
+| Manim animation (local render) | < 30s | 45s | Serve static image + audio |
+| LivePortrait avatar (local) | < 15s | 20s | Serve illustrated narrative |
 
 ---
 
@@ -240,9 +356,9 @@ sequenceDiagram
 
 | Paid Component | Free Substitute | Quality Trade-off |
 |---|---|---|
-| OpenAI GPT-4o | LLaMA-3 via Ollama | Slight drop in simplification quality |
-| HeyGen avatar | D-ID / SadTalker (OSS) | Lower video quality |
-| ElevenLabs TTS | Coqui TTS (local) | Slightly less natural voice |
+| OpenAI GPT-4o | Gemma 4 E2B via Ollama | Better multimodal, Apache 2.0 |
+| HeyGen avatar | LivePortrait (local) | Higher quality lip-sync |
+| ElevenLabs TTS | Kokoro TTS (local) | Voice cloning included |
 | Stable Diffusion API | SD local via `diffusers` | Slower (CPU-only if no GPU) |
 
 ---
@@ -265,6 +381,52 @@ pytest __tests__/test_prefetch.py -v -k "test_timeout_fallback"
 
 ---
 
+## � API Reference
+
+### `POST /api/generate`
+
+Generate content in target format based on action_id.
+
+**Request:**
+```json
+{
+  "action_id": 2,
+  "slide_content": "Photosynthesis is the process by which...",
+  "learner_level": "grade8",
+  "session_id": "uuid-string",
+  "confidence": 0.74,
+  "state_vector": {
+    "cognitive_load": 0.82,
+    "regression_count": 7,
+    "hyperfocus_composite": 0.15
+  }
+}
+```
+
+**Response (action_id = 2 — Text Simplification):**
+```json
+{
+  "action_id": 2,
+  "content": {
+    "simplified_text": "Plants make their own food using sunlight...",
+    "fk_grade": 7.8,
+    "original_fk": 12.3,
+    "chunks": ["Plants make their own food using sunlight.", "This process is called photosynthesis.", ...]
+  },
+  "generation_time_ms": 2847,
+  "cache_hit": false
+}
+```
+
+**Supported action_ids:**
+- `0`: Hold course (no generation, returns 204)
+- `2`: Text simplification (Tier 2)
+- `3`: Visual/Audio/Video (Tier 3 — routed by content type)
+- `4`: Gamified quiz (Tier 2)
+- `5`: Sensory break (Tier 1 — returns pre-built templates)
+
+---
+
 ## 🔗 Connected Modules
 
 | Module | Connection |
@@ -273,6 +435,46 @@ pytest __tests__/test_prefetch.py -v -k "test_timeout_fallback"
 | [`quantum/`](../quantum/README.md) | Confidence gate set by Orchestrator Q-values |
 | [`frontend/`](../frontend/README.md) | Delivers generated content to `ContentRenderer.tsx` |
 | [`infra/`](../infra/README.md) | Containerised as independent Docker service |
+
+---
+
+## 🚀 Setup & Development
+
+### Prerequisites
+- Python 3.11+
+- Docker & Docker Compose
+- Ollama installed locally
+
+### Quick Start
+```bash
+# Install all dependencies
+pip install -r requirements.txt
+
+# Start Ollama + Gemma 4 E2B model
+ollama serve &
+ollama pull gemma2:9b  # or your chosen Gemma 4 variant
+
+# Install Manim (Community edition)
+pip install manim
+
+# Install Kokoro TTS (Docker-based)
+docker pull ghcr.io/hexgrad/kokoro-tts:latest
+
+# Install LivePortrait (GitHub repo)
+git clone https://github.com/KwaiVGI/LivePortrait
+cd LivePortrait && pip install -r requirements.txt
+
+# Run gen-engine locally
+uvicorn main:app --reload --host 0.0.0.0 --port 8001
+```
+
+### Docker Development
+```bash
+# Full stack with all services
+docker-compose up -d
+
+# Includes: gen-engine, Kokoro TTS, Ollama, Prometheus
+```
 
 ---
 
