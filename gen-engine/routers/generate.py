@@ -83,6 +83,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 import time
 import logging
+from datetime import datetime
 
 from models.request_schemas import GenerateRequest
 from models.response_schemas import GenerateResponse, ContentPayload
@@ -120,7 +121,7 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse:
             content=content,
             generation_time_ms=generation_time_ms,
             cache_hit=False,
-            timestamp="2026-04-18T14:30:00Z",
+            timestamp=datetime.now().isoformat(),
             session_id=str(request.session_id),
             request_id=f"req_{int(time.time())}"
         )
@@ -140,7 +141,7 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse:
             generation_time_ms=int((time.time() - start_time) * 1000),
             cache_hit=False,
             error=str(e),
-            timestamp="2026-04-18T14:30:00Z",
+            timestamp=datetime.now().isoformat(),
             session_id=str(request.session_id),
             request_id=f"req_{int(time.time())}"
         )

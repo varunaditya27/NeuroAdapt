@@ -58,22 +58,12 @@ import logging
 from pathlib import Path
 from datetime import datetime
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 import requests
-
-# Prometheus metrics
-try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-    PROMETHEUS_AVAILABLE = True
-except ImportError:
-    PROMETHEUS_AVAILABLE = False
-    logger.warning("prometheus-client not available, metrics disabled")
-
-from routers import generate, health
 
 # ============================================================================
 # CONFIGURATION & LOGGING
@@ -96,6 +86,16 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    logger.warning("prometheus-client not available, metrics disabled")
+
+from routers import generate, health
 
 # ============================================================================
 # FASTAPI APP INITIALIZATION
@@ -147,7 +147,7 @@ app_state = {
 # SERVICE VERIFICATION UTILITIES
 # ============================================================================
 
-def verify_service(service_name: str, url: str, timeout: int = 2) -> tuple[bool, Optional[str]]:
+def verify_service(service_name: str, url: str, timeout: int = 2) -> Tuple[bool, Optional[str]]:
     """
     Verify external service connectivity.
     Returns (is_available, error_message)
@@ -251,20 +251,21 @@ async def root():
 async def health_check():
     """Detailed health check endpoint for Kubernetes probes."""
     services_status = {}
-    all_healthy = True
     
+    # Check service status but don't fail if they're unavailable
+    # (gen-engine can degrade gracefully)
     for service_name, service_info in app_state["services"].items():
         services_status[service_name] = {
             "status": "up" if service_info["available"] else "down",
             "error": service_info["error"],
         }
-        if not service_info["available"]:
-            all_healthy = False
     
+    # Always return 200 OK as long as gen-engine app itself is running
+    # External service failures don't make the app unhealthy
     return JSONResponse(
-        status_code=200 if all_healthy else 503,
+        status_code=200,
         content={
-            "status": "healthy" if all_healthy else "degraded",
+            "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "services": services_status,
             "cache": {
