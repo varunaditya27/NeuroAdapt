@@ -452,7 +452,7 @@ pip install -r requirements.txt
 
 # Start Ollama + Gemma 4 E2B model
 ollama serve &
-ollama pull gemma2:9b  # or your chosen Gemma 4 variant
+ollama pull gemma4:e2b  # or your chosen Gemma 4 variant
 
 # Install Manim (Community edition)
 pip install manim

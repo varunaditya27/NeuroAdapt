@@ -24,15 +24,114 @@
 version: '3.8'
 
 services:
-  # TODO: Define ollama service
-  # TODO: Define kokoro-tts service
-  # TODO: Define gen-engine service
-  # TODO: Define prometheus service (optional)
-  # TODO: Define networks (neuroadapt)
-  # TODO: Define volumes (ollama-models, kokoro-voices)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: neuroadapt-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - neuroadapt
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      - OLLAMA_HOST=0.0.0.0
 
-# ENVIRONMENT VARIABLES (set in .env):
-# TODO: OLLAMA_URL=http://ollama:11434
-# TODO: TTS_URL=http://kokoro-tts:8880
-# TODO: LOG_LEVEL=INFO
-# TODO: GENERATION_CACHE_SIZE=500
+  kokoro-tts:
+    # Using a placeholder image - replace with actual Kokoro TTS image when available
+    image: python:3.11-slim
+    container_name: neuroadapt-kokoro-tts
+    ports:
+      - "8880:8880"
+    volumes:
+      - kokoro-voices:/app/voices
+    networks:
+      - neuroadapt
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    command: >
+      sh -c "
+        pip install fastapi uvicorn requests &&
+        python -c '
+        from fastapi import FastAPI
+        import uvicorn
+        app = FastAPI()
+        @app.get(\"/health\")
+        def health(): return {\"status\": \"ok\"}
+        uvicorn.run(app, host=\"0.0.0.0\", port=8880)
+        '
+      "
+
+  gen-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neuroadapt-gen-engine
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./logs:/home/app/logs
+      - ./cache:/home/app/cache
+    networks:
+      - neuroadapt
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - TTS_URL=http://kokoro-tts:8880
+      - LOG_LEVEL=INFO
+      - CACHE_MAX_SIZE=500
+      - CACHE_TTL_SECONDS=300
+      - PROMETHEUS_ENABLED=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: neuroadapt-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - neuroadapt
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+networks:
+  neuroadapt:
+    driver: bridge
+
+volumes:
+  ollama-models:
+    driver: local
+  kokoro-voices:
+    driver: local
+  prometheus-data:
+    driver: local
