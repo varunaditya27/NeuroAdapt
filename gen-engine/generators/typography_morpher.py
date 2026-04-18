@@ -146,12 +146,151 @@ RELATED:
 ================================================================================
 """
 
-# TODO: Define state_vector input schema
-# TODO: Create lookup tables by cognitive_load
-# TODO: Implement categorization logic
-# TODO: Implement delta application functions
-# TODO: Implement hyperfocus lock check
-# TODO: Generate CSS variables output
-# TODO: Add validation of ranges
-# TODO: Add error handling
-# TODO: Add logging/metrics
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any, Dict, Optional
+
+
+BASE_CSS_BY_LOAD: Dict[str, Dict[str, str]] = {
+    "low": {
+        "--font-size-base": "20px",
+        "--font-weight-body": "400",
+        "--line-height": "1.8",
+        "--letter-spacing": "0.8px",
+        "--paragraph-margin": "16px",
+        "--color-contrast": "normal",
+        "--animation-duration": "0.6s",
+    },
+    "moderate": {
+        "--font-size-base": "18px",
+        "--font-weight-body": "400",
+        "--line-height": "1.6",
+        "--letter-spacing": "0.4px",
+        "--paragraph-margin": "12px",
+        "--color-contrast": "normal",
+        "--animation-duration": "0.5s",
+    },
+    "high": {
+        "--font-size-base": "16px",
+        "--font-weight-body": "500",
+        "--line-height": "1.5",
+        "--letter-spacing": "0.2px",
+        "--paragraph-margin": "10px",
+        "--color-contrast": "high",
+        "--animation-duration": "0.4s",
+    },
+    "critical": {
+        "--font-size-base": "22px",
+        "--font-weight-body": "600",
+        "--line-height": "2.0",
+        "--letter-spacing": "1.2px",
+        "--paragraph-margin": "20px",
+        "--color-contrast": "enhanced",
+        "--animation-duration": "0.8s",
+    },
+}
+
+
+def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def categorize_cognitive_load(load: float) -> str:
+    """Bucket cognitive load for style lookup."""
+    load = _clamp(load)
+    if load < 0.3:
+        return "low"
+    if load < 0.6:
+        return "moderate"
+    if load < 0.9:
+        return "high"
+    return "critical"
+
+
+def _parse_px(value: str) -> float:
+    return float(value.replace("px", "").strip())
+
+
+def _format_px(value: float) -> str:
+    return f"{value:.1f}px" if value % 1 else f"{int(value)}px"
+
+
+def _parse_float(value: str) -> float:
+    return float(value.strip())
+
+
+def _format_float(value: float) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def apply_gaze_stability_delta(css: Dict[str, str], gaze_stability: float) -> Dict[str, str]:
+    """Adjust line-height and spacing when gaze is unstable."""
+    output = deepcopy(css)
+    stability = _clamp(gaze_stability)
+    if stability < 0.7:
+        line_height = _parse_float(output["--line-height"])
+        letter_spacing = _parse_px(output["--letter-spacing"])
+        output["--line-height"] = _format_float(min(2.2, line_height + 0.15))
+        output["--letter-spacing"] = _format_px(min(2.0, letter_spacing + 0.3))
+    return output
+
+
+def apply_regression_delta(css: Dict[str, str], regression_count: int) -> Dict[str, str]:
+    """Increase readability support for heavy regression patterns."""
+    output = deepcopy(css)
+    if regression_count > 6:
+        line_height = _parse_float(output["--line-height"])
+        paragraph_margin = _parse_px(output["--paragraph-margin"])
+        output["--font-weight-body"] = "600"
+        output["--line-height"] = _format_float(min(2.3, line_height + 0.2))
+        output["--paragraph-margin"] = _format_px(min(24.0, paragraph_margin + 4.0))
+        output["--color-contrast"] = "enhanced"
+    elif regression_count >= 3:
+        line_height = _parse_float(output["--line-height"])
+        output["--line-height"] = _format_float(min(2.1, line_height + 0.1))
+        if output["--font-weight-body"] == "400":
+            output["--font-weight-body"] = "500"
+    return output
+
+
+def apply_attention_delta(css: Dict[str, str], switching_rate: float) -> Dict[str, str]:
+    """Tune transition speed based on switching cadence."""
+    output = deepcopy(css)
+    switching_rate = _clamp(switching_rate)
+    if switching_rate > 0.7:
+        output["--animation-duration"] = "0.3s"
+    elif switching_rate < 0.3:
+        output["--animation-duration"] = "0.8s"
+    return output
+
+
+def morph_typography(
+    state_vector: Optional[Dict[str, Any]],
+    previous_css: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """
+    Generate typography CSS variables from learner cognitive state.
+
+    Returns CSS custom properties keyed by variable name.
+    """
+    state = state_vector or {}
+    load = float(state.get("cognitive_load", 0.5))
+    gaze_stability = float(state.get("eye_gaze_stability", 0.5))
+    regression_count = int(state.get("regression_count", 0))
+    attention_switching = float(state.get("attention_switching", 0.5))
+    hyperfocus_composite = float(state.get("hyperfocus_composite", 0.0))
+
+    if _clamp(hyperfocus_composite) > 0.75 and previous_css:
+        return deepcopy(previous_css)
+
+    bucket = categorize_cognitive_load(load)
+    css = deepcopy(BASE_CSS_BY_LOAD[bucket])
+    css = apply_gaze_stability_delta(css, gaze_stability)
+    css = apply_regression_delta(css, regression_count)
+    css = apply_attention_delta(css, attention_switching)
+
+    if _clamp(hyperfocus_composite) > 0.75:
+        css["--animation-duration"] = "0s"
+
+    return css

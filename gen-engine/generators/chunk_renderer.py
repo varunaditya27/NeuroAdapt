@@ -95,11 +95,138 @@ RELATED:
 ================================================================================
 """
 
-# TODO: Implement chunk_text() main function
-# TODO: Load spaCy English model
-# TODO: Implement sentence tokenization
-# TODO: Implement hybrid chunking strategy
-# TODO: Compute readability grade per chunk
-# TODO: Implement read time estimation
-# TODO: Add error handling
-# TODO: Add caching by text hash
+from __future__ import annotations
+
+import re
+from typing import Dict, List
+
+try:
+    import spacy
+except ImportError:  # pragma: no cover - dependency can be optional in some environments
+    spacy = None
+
+try:
+    import textstat
+except ImportError:  # pragma: no cover
+    textstat = None
+
+
+_NLP = None
+_NLP_LOAD_ATTEMPTED = False
+
+
+def _load_spacy_model():
+    global _NLP, _NLP_LOAD_ATTEMPTED
+    if _NLP is not None or _NLP_LOAD_ATTEMPTED or spacy is None:
+        return _NLP
+    _NLP_LOAD_ATTEMPTED = True
+    try:
+        _NLP = spacy.load("en_core_web_sm", disable=["ner", "tagger", "lemmatizer"])
+    except Exception:
+        _NLP = None
+    return _NLP
+
+
+def _split_sentences(text: str) -> List[str]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+
+    nlp = _load_spacy_model()
+    if nlp is not None:
+        doc = nlp(cleaned)
+        return [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+
+    # Lightweight regex fallback when spaCy model is not available.
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _compute_readability_grade(text: str) -> float:
+    if not text:
+        return 0.0
+    if textstat is None:
+        # Fallback heuristic when textstat isn't available.
+        words = max(1, len(text.split()))
+        sentences = max(1, len(re.split(r"[.!?]+", text)) - 1)
+        avg_sentence_len = words / sentences
+        return round(min(20.0, max(0.0, avg_sentence_len * 0.6)), 2)
+    try:
+        return round(float(textstat.flesch_kincaid_grade(text)), 2)
+    except Exception:
+        return 0.0
+
+
+def merge_short_sentences(chunks: List[Dict[str, str]], min_words: int = 10) -> List[Dict[str, str]]:
+    """Merge very short sentence chunks with the following chunk for smoother reveal."""
+    if not chunks:
+        return []
+
+    merged: List[Dict[str, str]] = []
+    buffer = None
+
+    for chunk in chunks:
+        word_count = len(chunk["text"].split())
+        if buffer is None and word_count < min_words:
+            buffer = chunk["text"]
+            continue
+
+        if buffer is not None:
+            text = f"{buffer} {chunk['text']}".strip()
+            merged.append({"text": text})
+            buffer = None
+        else:
+            merged.append(chunk)
+
+    if buffer is not None:
+        if merged:
+            merged[-1]["text"] = f"{merged[-1]['text']} {buffer}".strip()
+        else:
+            merged.append({"text": buffer})
+
+    return merged
+
+
+def estimate_read_time(chunks: List[Dict[str, str]], words_per_minute: int = 180) -> int:
+    total_words = sum(len(chunk.get("text", "").split()) for chunk in chunks)
+    if total_words <= 0:
+        return 0
+    return max(1, int((total_words / max(1, words_per_minute)) * 60))
+
+
+def chunk_text(
+    text: str,
+    chunk_strategy: str = "sentence",
+    preserve_formatting: bool = True,
+) -> Dict[str, object]:
+    """
+    Convert full text into progressive reveal chunks with readability metadata.
+    """
+    raw_sentences = _split_sentences(text)
+
+    if chunk_strategy == "paragraph":
+        paragraphs = [p.strip() for p in (text or "").split("\n\n") if p.strip()]
+        chunks = [{"text": p} for p in paragraphs]
+    else:
+        chunks = [{"text": s if preserve_formatting else s.strip()} for s in raw_sentences]
+        if chunk_strategy == "hybrid":
+            chunks = merge_short_sentences(chunks)
+
+    enriched_chunks: List[Dict[str, object]] = []
+    for chunk in chunks:
+        chunk_text_value = chunk.get("text", "").strip()
+        if not chunk_text_value:
+            continue
+        enriched_chunks.append(
+            {
+                "text": chunk_text_value,
+                "readability_grade": _compute_readability_grade(chunk_text_value),
+                "word_count": len(chunk_text_value.split()),
+            }
+        )
+
+    return {
+        "chunks": enriched_chunks,
+        "total_chunks": len(enriched_chunks),
+        "estimated_read_time_seconds": estimate_read_time(enriched_chunks),
+    }
