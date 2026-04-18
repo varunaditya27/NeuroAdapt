@@ -8,7 +8,7 @@ PURPOSE:
     Auto-generate OpenAPI documentation.
 
 DEPENDENCIES:
-    - pydantic==2.9.0 : Data validation & serialization
+    - pydantic==2.13.2 : Data validation & serialization
     - typing : Type hints
 
 INPUT MODELS:
@@ -98,13 +98,279 @@ RELATED:
 ================================================================================
 """
 
-# TODO: Define StateVector Pydantic model
-# TODO: Define LearnerProfile model (optional)
-# TODO: Define GenerateRequest model
-# TODO: Add field validators for action_id range
-# TODO: Add field validators for confidence range
-# TODO: Add field validators for UUID format
-# TODO: Add field validators for enum strings
-# TODO: Add defaults for optional state_vector fields
-# TODO: Add Config class for schema documentation
-# TODO: Add example() for OpenAPI docs
+from enum import Enum
+from typing import Optional, Dict, Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+
+class LearnerLevel(str, Enum):
+    """Enumeration of supported learner reading levels."""
+    GRADE5 = "grade5"
+    GRADE8 = "grade8"
+    UNIVERSITY = "university"
+
+
+class ContentType(str, Enum):
+    """Enumeration of content types for generation."""
+    TEXT = "text"
+    IMAGE = "image"
+    ANIMATION = "animation"
+    AUDIO = "audio"
+    AVATAR = "avatar"
+
+
+class StateVector(BaseModel):
+    """
+    Nested model containing real-time learner state information.
+
+    All values are normalized 0.0-1.0 except where noted.
+    Used by hyperfocus gate and orchestration logic.
+    """
+
+    # Required fields (must be provided by orchestrator)
+    cognitive_load: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Current cognitive load estimate (0.0=low, 1.0=overloaded)"
+    )
+    regression_count: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Number of regressions in current session"
+    )
+    hyperfocus_composite: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Pre-computed hyperfocus composite score"
+    )
+
+    # Optional fields with defaults
+    eye_gaze_stability: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Eye gaze stability measure (0.0=unstable, 1.0=very stable)"
+    )
+    attention_switching: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Rate of attention switching (0.0=stable, 1.0=highly switching)"
+    )
+    time_on_task: int = Field(
+        default=0,
+        ge=0,
+        description="Seconds spent on current task"
+    )
+    engagement_level: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Current engagement level estimate"
+    )
+    micro_pause_ratio: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Ratio of micro-pauses to total time"
+    )
+    idle_time_bonus: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Bonus for sustained idle periods"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "cognitive_load": 0.7,
+                "regression_count": 3,
+                "hyperfocus_composite": 0.85,
+                "eye_gaze_stability": 0.8,
+                "attention_switching": 0.2,
+                "time_on_task": 450,
+                "engagement_level": 0.9,
+                "micro_pause_ratio": 0.05,
+                "idle_time_bonus": 0.1
+            }
+        }
+    )
+
+
+class LearnerProfile(BaseModel):
+    """Optional learner metadata for personalization."""
+
+    learner_id: Optional[UUID] = Field(
+        None,
+        description="Unique learner identifier"
+    )
+    preferred_voice: Optional[str] = Field(
+        None,
+        description="Preferred TTS voice identifier"
+    )
+    dyslexia_profile: Optional[bool] = Field(
+        None,
+        description="Whether learner has dyslexia accommodations"
+    )
+    autism_profile: Optional[bool] = Field(
+        None,
+        description="Whether learner has autism accommodations"
+    )
+    adhd_profile: Optional[bool] = Field(
+        None,
+        description="Whether learner has ADHD accommodations"
+    )
+
+
+class GenerateRequest(BaseModel):
+    """
+    Main request model for POST /api/generate endpoint.
+
+    Validates all incoming generation requests from the orchestrator.
+    """
+
+    # Required core fields
+    action_id: int = Field(
+        ...,
+        ge=0,
+        le=5,
+        description="Action to perform (0=hold, 1=chunk, 2=simplify, 3=visual, 4=quiz, 5=break)"
+    )
+    slide_content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Content to transform (text, concept description, etc.)"
+    )
+    learner_level: LearnerLevel = Field(
+        ...,
+        description="Target reading/complexity level"
+    )
+    session_id: UUID = Field(
+        ...,
+        description="Unique session identifier"
+    )
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Orchestrator confidence in this action (0.0-1.0)"
+    )
+    state_vector: StateVector = Field(
+        ...,
+        description="Real-time learner state information"
+    )
+
+    # Optional fields
+    learner_profile: Optional[LearnerProfile] = Field(
+        None,
+        description="Learner-specific preferences and accommodations"
+    )
+    concept: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=200,
+        description="Explicit concept override (if different from slide_content)"
+    )
+    content_type: Optional[ContentType] = Field(
+        None,
+        description="Specific content type for action_id=3 (visual generation)"
+    )
+    request_id: Optional[str] = Field(
+        None,
+        description="Client-provided request ID for tracing"
+    )
+
+    @field_validator('action_id')
+    @classmethod
+    def validate_action_id(cls, v: int) -> int:
+        """Ensure action_id is within valid range."""
+        if not (0 <= v <= 5):
+            raise ValueError(f'Action ID must be between 0 and 5, got {v}')
+        return v
+
+    @field_validator('confidence')
+    @classmethod
+    def validate_confidence(cls, v: float) -> float:
+        """Ensure confidence is within valid range."""
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(f'Confidence must be between 0.0 and 1.0, got {v}')
+        return v
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "action_id": 2,
+                "slide_content": "Photosynthesis is the biochemical process by which autotrophic organisms convert light energy into chemical energy stored in glucose molecules.",
+                "learner_level": "grade8",
+                "session_id": "550e8400-e29b-41d4-a716-446655440000",
+                "confidence": 0.85,
+                "state_vector": {
+                    "cognitive_load": 0.7,
+                    "regression_count": 3,
+                    "hyperfocus_composite": 0.85,
+                    "eye_gaze_stability": 0.8,
+                    "attention_switching": 0.2,
+                    "time_on_task": 450,
+                    "engagement_level": 0.9
+                },
+                "concept": "photosynthesis",
+                "content_type": "text"
+            }
+        }
+    )
+
+
+class PrefetchRequest(BaseModel):
+    """
+    Request model for async prefetch endpoint.
+
+    Used to pre-generate content for likely next actions.
+    """
+
+    session_id: UUID = Field(
+        ...,
+        description="Session to prefetch for"
+    )
+    top_actions: list[int] = Field(
+        ...,
+        min_length=1,
+        max_length=3,
+        description="Action IDs to prefetch (ordered by Q-value)"
+    )
+    slide_content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Current slide content for prefetch context"
+    )
+    learner_level: LearnerLevel = Field(
+        ...,
+        description="Learner's current level"
+    )
+
+    @field_validator('top_actions')
+    @classmethod
+    def validate_top_actions(cls, v: list[int]) -> list[int]:
+        """Ensure all action IDs are valid."""
+        for action_id in v:
+            if not (0 <= action_id <= 5):
+                raise ValueError(f'All action IDs must be between 0 and 5, got {action_id}')
+        return v
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "session_id": "550e8400-e29b-41d4-a716-446655440000",
+                "top_actions": [3, 4, 2],
+                "slide_content": "Mitochondria are the powerhouse of the cell...",
+                "learner_level": "grade8"
+            }
+        }
+    )

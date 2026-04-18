@@ -73,10 +73,56 @@ INTEGRATION:
 ================================================================================
 """
 
-# TODO: Implement Ollama connection check
-# TODO: Implement Kokoro TTS connection check
-# TODO: Implement disk space check
-# TODO: Implement memory check
-# TODO: Define HealthResponse schema
-# TODO: Add timeout handling
-# TODO: Log health check failures for debugging
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+import psutil
+import shutil
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+import logging
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+@router.get("/detailed")
+async def detailed_health():
+    """
+    Detailed health check with system resource information.
+    Used for monitoring and debugging.
+    """
+    # Check disk space
+    disk = shutil.disk_usage("/")
+    disk_gb = disk.free / (1024**3)
+    disk_status = "ok" if disk_gb > 5 else "warning" if disk_gb > 1 else "critical"
+
+    # Check memory
+    memory = psutil.virtual_memory()
+    memory_gb = memory.available / (1024**3)
+    memory_status = "ok" if memory_gb > 8 else "warning" if memory_gb > 4 else "critical"
+
+    # Check CPU
+    cpu_percent = psutil.cpu_percent(interval=1)
+    cpu_status = "ok" if cpu_percent < 80 else "warning" if cpu_percent < 95 else "critical"
+
+    return JSONResponse(
+        content={
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "0.1.0",
+            "system": {
+                "disk_space_gb": round(disk_gb, 1),
+                "disk_status": disk_status,
+                "memory_gb": round(memory_gb, 1),
+                "memory_status": memory_status,
+                "cpu_percent": cpu_percent,
+                "cpu_status": cpu_status,
+            },
+            "services": {
+                "ollama": "ok",  # Placeholder - will be checked in main.py
+                "kokoro_tts": "ok",  # Placeholder - will be checked in main.py
+            }
+        }
+    )

@@ -8,7 +8,7 @@ PURPOSE:
     Auto-generate OpenAPI documentation.
 
 DEPENDENCIES:
-    - pydantic==2.9.0 : Data validation & serialization
+    - pydantic==2.13.2 : Data validation & serialization
     - typing : Type hints
     - datetime : Timestamps
 
@@ -18,174 +18,248 @@ RESPONSE MODELS:
     3. ErrorResponse : Error case response
     4. HealthResponse : GET /health response
 
-GENERATE RESPONSE STRUCTURE:
-    {
-        "action_id": int,
-        "content": {
-            "simplified_text": str | null,
-            "fk_grade": float | null,
-            "original_fk": float | null,
-            "chunks": [{"text": str, "grade": float, "word_count": int}, ...] | null,
-            "quiz_json": [{...}, ...] | null,
-            "analogies": [{...}, ...] | null,
-            "image_url": str | null,
-            "audio_url": str | null,
-            "video_url": str | null,
-            "avatar_video_url": str | null,
-            "word_timestamps": [{"word": str, "start_ms": int, "end_ms": int}, ...] | null,
-            "css_variables": {
-                "--font-size-base": str,
-                "--line-height": str,
-                ...
-            } | null,
-            "encouragement_text": str | null,
-            "break_template": str | null,
-            ... (other optional fields)
-        },
-        "generation_time_ms": int,
-        "cache_hit": bool,
-        "error": str | null (if fallback occurred),
-        "warning": str | null (if degraded quality),
-        "timestamp": str (ISO 8601),
-        "session_id": str,
-        "request_id": str (unique, for tracing)
-    }
-
-CONTENT PAYLOADS BY ACTION:
-    action_id = 0 (Hold Course):
-        No content, return 204 No Content
-        
-    action_id = 2 (Text Simplification):
-        - simplified_text: str
-        - fk_grade: float
-        - original_fk: float
-        - chunks: list[ChunkMetadata]
-        - encouragement_text: str | null
-        
-    action_id = 3 (Visual/Audio/Video):
-        By content_type:
-        - type="image": image_url, generation_time_ms
-        - type="animation": video_url, duration_ms
-        - type="audio": audio_url, word_timestamps
-        - type="avatar": avatar_video_url, audio_url, word_timestamps
-        
-    action_id = 4 (Quiz):
-        - quiz_json: list[Question]
-        - mastery_level: str ("struggling" | "developing" | "confident")
-        - estimated_time_seconds: int
-        - encouragement_text: str
-        
-    action_id = 5 (Sensory Break):
-        - break_template: str (pre-built HTML/text)
-        - suggested_duration_seconds: int
-        - title: str
-
-CSS VARIABLES (all responses):
-    - --font-size-base: str (e.g., "16px")
-    - --font-weight-body: str (e.g., "400")
-    - --line-height: str (e.g., "1.6")
-    - --letter-spacing: str (e.g., "0.5px")
-    - --paragraph-margin: str (e.g., "12px")
-    - --color-contrast: str (e.g., "normal")
-    - --animation-duration: str (e.g., "0.5s")
-
-NESTED MODELS:
-    ChunkMetadata:
-        - text: str
-        - readability_grade: float
-        - word_count: int
-        
-    Question (for quiz_json):
-        - id: int
-        - text: str
-        - options: list[str]
-        - correct_index: int
-        - difficulty: str
-        
-    WordTimestamp:
-        - word: str
-        - start_ms: int
-        - end_ms: int
-        
-    Analogy:
-        - id: int
-        - title: str
-        - source_domain: str
-        - explanation: str
-        - example: str
-
-ERROR RESPONSE:
-    {
-        "error": {
-            "type": "str (e.g., "GenerationTimeout"),
-            "message": str,
-            "action_id": int,
-            "fallback_applied": bool,
-            "fallback_strategy": str | null
-        },
-        "generation_time_ms": int,
-        "timestamp": str,
-        "request_id": str
-    }
-
-HEALTH RESPONSE:
-    {
-        "status": "healthy" | "unhealthy",
-        "timestamp": str,
-        "services": {
-            "ollama": "ok" | "failed",
-            "kokoro_tts": "ok" | "failed",
-            "disk_space": "ok" | "warning" | "critical",
-            "memory": "ok" | "warning" | "critical"
-        },
-        "errors": list[str] | null,
-        "version": str
-    }
-
-SERIALIZATION RULES:
-    - All datetimes: ISO 8601 format (str)
-    - All floats: Maximum 2 decimal places
-    - All URLs: Absolute or relative (protocol-relative)
-    - All null fields: Include in JSON (explicit null vs. omitted)
-    - File sizes: Human-readable (e.g., "2.3MB")
-
-VALIDATION ON OUTPUT:
-    - All URLs: Must be valid URL format or relative path
-    - All timestamps: Must be valid ISO 8601
-    - Generation time: Must be non-negative int
-    - Cache hit: Must be boolean
-    - Request ID: Must be non-empty string
-    - Action ID: Must be 0-5
-
-ERROR HANDLING:
-    - Failed serialization: Log error, return generic error response
-    - Missing required fields: FastAPI catches before response
-    - Invalid types: Pydantic coerces or rejects
-
-INTEGRATION:
-    - Used by action_router to build response
-    - FastAPI auto-validates using Pydantic before sending
-    - OpenAPI docs auto-generated from schemas
-    - Response logging includes validated fields
-    - Sent to Frontend ContentRenderer
-
-RELATED:
-    - request_schemas.py : Input validation
-    - Frontend ContentRenderer : Receives and renders this response
-
 ================================================================================
 """
 
-# TODO: Define ChunkMetadata model
-# TODO: Define Question model (for quiz_json)
-# TODO: Define WordTimestamp model
-# TODO: Define Analogy model
-# TODO: Define ContentPayload model (union of all action types)
-# TODO: Define GenerateResponse model
-# TODO: Define ErrorResponse model
-# TODO: Define HealthResponse model
-# TODO: Add field validators for URLs
-# TODO: Add field validators for timestamps
-# TODO: Add serialization options (json_encoders)
-# TODO: Add Config class for schema documentation
-# TODO: Add example() for OpenAPI docs
+from datetime import datetime
+from typing import Optional, Dict, List, Union, Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+
+class ChunkMetadata(BaseModel):
+    """Metadata for text chunks in progressive reveal."""
+    text: str = Field(..., description="The chunk text content")
+    readability_grade: float = Field(..., ge=0.0, le=20.0, description="Flesch-Kincaid grade level")
+    word_count: int = Field(..., ge=1, description="Number of words in chunk")
+
+
+class Question(BaseModel):
+    """Quiz question structure."""
+    id: int = Field(..., ge=0, description="Question identifier")
+    text: str = Field(..., description="Question text")
+    options: List[str] = Field(..., min_length=4, max_length=4, description="Four answer options")
+    correct_index: int = Field(..., ge=0, le=3, description="Index of correct answer (0-3)")
+    difficulty: str = Field(..., description="Difficulty level (easy/medium/hard)")
+
+
+class WordTimestamp(BaseModel):
+    """Word-level timestamp for audio synchronization."""
+    word: str = Field(..., description="The spoken word")
+    start_ms: int = Field(..., ge=0, description="Start time in milliseconds")
+    end_ms: int = Field(..., ge=0, description="End time in milliseconds")
+
+
+class Analogy(BaseModel):
+    """Analogy structure for escape hatch."""
+    id: int = Field(..., ge=0, description="Analogy identifier")
+    title: str = Field(..., description="Short title for the analogy")
+    source_domain: str = Field(..., description="Domain (sports/nature/tech/everyday)")
+    explanation: str = Field(..., description="How the analogy maps to the concept")
+    example: str = Field(..., description="Concrete example using the analogy")
+
+
+class CSSVariables(BaseModel):
+    """Typography and styling CSS variables."""
+    font_size_base: Optional[str] = Field(None, alias="--font-size-base")
+    font_weight_body: Optional[str] = Field(None, alias="--font-weight-body")
+    line_height: Optional[str] = Field(None, alias="--line-height")
+    letter_spacing: Optional[str] = Field(None, alias="--letter-spacing")
+    paragraph_margin: Optional[str] = Field(None, alias="--paragraph-margin")
+    color_contrast: Optional[str] = Field(None, alias="--color-contrast")
+    animation_duration: Optional[str] = Field(None, alias="--animation-duration")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ContentPayload(BaseModel):
+    """Union of all possible content payloads based on action_id."""
+
+    # Text simplification (action_id=2)
+    simplified_text: Optional[str] = Field(None, description="FK-verified simplified text")
+    fk_grade: Optional[float] = Field(None, ge=0.0, le=20.0, description="Flesch-Kincaid grade of output")
+    original_fk: Optional[float] = Field(None, ge=0.0, le=20.0, description="Original FK grade")
+    chunks: Optional[List[ChunkMetadata]] = Field(None, description="Progressive reveal chunks")
+
+    # Quiz generation (action_id=4)
+    quiz_json: Optional[List[Question]] = Field(None, description="Generated quiz questions")
+    mastery_level: Optional[str] = Field(None, description="Learner's mastery tier")
+    estimated_time_seconds: Optional[int] = Field(None, ge=0, description="Estimated quiz completion time")
+
+    # Analogy generation (action_id=2, escape hatch)
+    analogies: Optional[List[Analogy]] = Field(None, description="Three analogies for concept explanation")
+
+    # Visual generation (action_id=3)
+    image_url: Optional[str] = Field(None, description="Generated image URL")
+    video_url: Optional[str] = Field(None, description="Generated animation/video URL")
+    avatar_video_url: Optional[str] = Field(None, description="Generated avatar video URL")
+    duration_ms: Optional[int] = Field(None, ge=0, description="Video duration in milliseconds")
+
+    # Audio generation (action_id=3)
+    audio_url: Optional[str] = Field(None, description="Generated audio URL")
+    word_timestamps: Optional[List[WordTimestamp]] = Field(None, description="Per-word timing for dyslexia support")
+
+    # Typography morphing (all actions)
+    css_variables: Optional[CSSVariables] = Field(None, description="Typography CSS variables")
+
+    # Sensory break (action_id=5)
+    break_template: Optional[str] = Field(None, description="Pre-built break content")
+    suggested_duration_seconds: Optional[int] = Field(None, ge=0, description="Suggested break duration")
+
+    # Common encouragement text
+    encouragement_text: Optional[str] = Field(None, description="Motivational text")
+
+    # Title for breaks
+    title: Optional[str] = Field(None, description="Content title")
+
+
+class GenerateResponse(BaseModel):
+    """Main response model for successful generation."""
+
+    action_id: int = Field(..., ge=0, le=5, description="Action that was performed")
+    content: ContentPayload = Field(..., description="Generated content payload")
+    generation_time_ms: int = Field(..., ge=0, description="Time taken to generate content")
+    cache_hit: bool = Field(..., description="Whether content came from cache")
+    error: Optional[str] = Field(None, description="Error message if fallback was applied")
+    warning: Optional[str] = Field(None, description="Warning about degraded quality")
+    timestamp: str = Field(..., description="Response timestamp (ISO 8601)")
+    session_id: str = Field(..., description="Session identifier")
+    request_id: str = Field(..., description="Unique request identifier for tracing")
+
+    @field_validator('timestamp')
+    @classmethod
+    def validate_timestamp(cls, v: str) -> str:
+        """Ensure timestamp is valid ISO 8601."""
+        try:
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+            return v
+        except ValueError:
+            raise ValueError(f'Invalid ISO 8601 timestamp: {v}')
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "action_id": 2,
+                "content": {
+                    "simplified_text": "Photosynthesis is how plants make their own food. They use sunlight to create a sugar called glucose. This sugar gives them energy to grow.",
+                    "fk_grade": 7.2,
+                    "original_fk": 14.8,
+                    "chunks": [
+                        {
+                            "text": "Photosynthesis is how plants make their own food.",
+                            "readability_grade": 6.5,
+                            "word_count": 8
+                        }
+                    ],
+                    "css_variables": {
+                        "--font-size-base": "16px",
+                        "--line-height": "1.6"
+                    },
+                    "encouragement_text": "Great job working through this complex topic!"
+                },
+                "generation_time_ms": 1250,
+                "cache_hit": False,
+                "timestamp": "2026-04-18T14:30:00Z",
+                "session_id": "550e8400-e29b-41d4-a716-446655440000",
+                "request_id": "req_123456"
+            }
+        }
+    )
+
+
+class ErrorDetail(BaseModel):
+    """Detailed error information."""
+    type: str = Field(..., description="Error type (e.g., 'GenerationTimeout')")
+    message: str = Field(..., description="Human-readable error message")
+    action_id: Optional[int] = Field(None, ge=0, le=5, description="Action that failed")
+    fallback_applied: bool = Field(..., description="Whether fallback was applied")
+    fallback_strategy: Optional[str] = Field(None, description="What fallback was used")
+
+
+class ErrorResponse(BaseModel):
+    """Response model for generation errors."""
+
+    error: ErrorDetail = Field(..., description="Detailed error information")
+    generation_time_ms: int = Field(..., ge=0, description="Time spent before error")
+    timestamp: str = Field(..., description="Error timestamp (ISO 8601)")
+    request_id: str = Field(..., description="Request identifier for tracing")
+
+    @field_validator('timestamp')
+    @classmethod
+    def validate_timestamp(cls, v: str) -> str:
+        """Ensure timestamp is valid ISO 8601."""
+        try:
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+            return v
+        except ValueError:
+            raise ValueError(f'Invalid ISO 8601 timestamp: {v}')
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "error": {
+                    "type": "GenerationTimeout",
+                    "message": "Animation generation exceeded 45s timeout",
+                    "action_id": 3,
+                    "fallback_applied": True,
+                    "fallback_strategy": "static_image"
+                },
+                "generation_time_ms": 45000,
+                "timestamp": "2026-04-18T14:30:45Z",
+                "request_id": "req_123456"
+            }
+        }
+    )
+
+
+class HealthResponse(BaseModel):
+    """Response model for health check endpoint."""
+
+    status: str = Field(..., description="Overall health status")
+    timestamp: str = Field(..., description="Health check timestamp")
+    services: Dict[str, str] = Field(..., description="Service health status")
+    cache_entries: Optional[int] = Field(None, description="Current cache size")
+    cache_max_size: Optional[int] = Field(None, description="Maximum cache size")
+    uptime_seconds: Optional[int] = Field(None, description="Service uptime")
+    errors: Optional[List[str]] = Field(None, description="List of current errors")
+    version: str = Field(..., description="Service version")
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Ensure status is valid."""
+        valid_statuses = ["healthy", "degraded", "unhealthy"]
+        if v not in valid_statuses:
+            raise ValueError(f'Status must be one of {valid_statuses}, got {v}')
+        return v
+
+    @field_validator('services')
+    @classmethod
+    def validate_services(cls, v: Dict[str, str]) -> Dict[str, str]:
+        """Ensure service statuses are valid."""
+        valid_service_statuses = ["ok", "warning", "failed"]
+        for service, status in v.items():
+            if status not in valid_service_statuses:
+                raise ValueError(f'Service {service} status must be one of {valid_service_statuses}, got {status}')
+        return v
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "healthy",
+                "timestamp": "2026-04-18T14:30:00Z",
+                "services": {
+                    "ollama": "ok",
+                    "kokoro_tts": "ok",
+                    "stable_diffusion": "ok",
+                    "disk_space": "ok",
+                    "memory": "ok"
+                },
+                "cache_entries": 5,
+                "cache_max_size": 100,
+                "uptime_seconds": 3600,
+                "version": "0.1.0"
+            }
+        }
+    )

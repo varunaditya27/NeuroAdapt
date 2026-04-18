@@ -79,11 +79,68 @@ INTEGRATION:
 ================================================================================
 """
 
-# TODO: Define GenerateRequest dataclass/Pydantic model
-# TODO: Define GenerateResponse dataclass/Pydantic model
-# TODO: Implement POST /api/generate endpoint
-# TODO: Add hyperfocus pre-emption check
-# TODO: Add latency budget enforcement with fallbacks
-# TODO: Add request logging to DB
-# TODO: Add error handling with graceful fallbacks
-# TODO: Add Prometheus metrics recording
+from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
+import time
+import logging
+
+from models.request_schemas import GenerateRequest
+from models.response_schemas import GenerateResponse, ContentPayload
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+@router.post("/generate", response_model=GenerateResponse)
+async def generate_content(request: GenerateRequest) -> GenerateResponse:
+    """
+    Main content generation endpoint.
+
+    For Phase 0: Returns a stub response with the original content.
+    This will be replaced with actual generation logic in Phase 1.
+    """
+    start_time = time.time()
+
+    try:
+        logger.info(f"Received generation request: action_id={request.action_id}, session_id={request.session_id}")
+
+        # Phase 0: Stub implementation - just return original content
+        # TODO: Replace with actual action_router logic in Phase 1
+
+        content = ContentPayload()
+        if request.action_id == 2:  # Text simplification
+            content.simplified_text = request.slide_content
+            content.fk_grade = 12.0  # Placeholder
+            content.original_fk = 12.0  # Placeholder
+            content.encouragement_text = "Content processed successfully"
+
+        generation_time_ms = int((time.time() - start_time) * 1000)
+
+        response = GenerateResponse(
+            action_id=request.action_id,
+            content=content,
+            generation_time_ms=generation_time_ms,
+            cache_hit=False,
+            timestamp="2026-04-18T14:30:00Z",
+            session_id=str(request.session_id),
+            request_id=f"req_{int(time.time())}"
+        )
+
+        logger.info(f"Generation completed in {generation_time_ms}ms")
+        return response
+
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        # Return graceful fallback
+        return GenerateResponse(
+            action_id=request.action_id,
+            content=ContentPayload(simplified_text=request.slide_content),
+            generation_time_ms=int((time.time() - start_time) * 1000),
+            cache_hit=False,
+            error=str(e),
+            timestamp="2026-04-18T14:30:00Z",
+            session_id=str(request.session_id),
+            request_id=f"req_{int(time.time())}"
+        )
