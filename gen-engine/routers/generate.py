@@ -79,54 +79,59 @@ INTEGRATION:
 ================================================================================
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import ValidationError
 import time
 import logging
 from datetime import datetime
+from uuid import uuid4
 
 from models.request_schemas import GenerateRequest
 from models.response_schemas import GenerateResponse, ContentPayload
+from orchestration.action_router import route_and_generate
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_content(request: GenerateRequest) -> GenerateResponse:
-    """
-    Main content generation endpoint.
-
-    For Phase 0: Returns a stub response with the original content.
-    This will be replaced with actual generation logic in Phase 1.
-    """
+    """Main content generation endpoint routed through orchestration layer."""
     start_time = time.time()
 
     try:
-        logger.info(f"Received generation request: action_id={request.action_id}, session_id={request.session_id}")
+        logger.info(
+            "Received generation request: action_id=%s, session_id=%s",
+            request.action_id,
+            request.session_id,
+        )
 
-        # Phase 0: Stub implementation - just return original content
-        # TODO: Replace with actual action_router logic in Phase 1
+        routing_result = await route_and_generate(request)
 
-        content = ContentPayload()
-        if request.action_id == 2:  # Text simplification
-            content.simplified_text = request.slide_content
-            content.fk_grade = 12.0  # Placeholder
-            content.original_fk = 12.0  # Placeholder
-            content.encouragement_text = "Content processed successfully"
+        # Contract behavior: action_id=0 means hold course, no content payload.
+        if routing_result.get("action_id") == 0:
+            logger.info("Generation pre-empted/held for session=%s", request.session_id)
+            return Response(status_code=204)
 
+        content_payload = ContentPayload(**(routing_result.get("content") or {}))
         generation_time_ms = int((time.time() - start_time) * 1000)
 
         response = GenerateResponse(
-            action_id=request.action_id,
-            content=content,
+            action_id=routing_result.get("action_id", request.action_id),
+            content=content_payload,
             generation_time_ms=generation_time_ms,
-            cache_hit=False,
+            cache_hit=bool(routing_result.get("cache_hit", False)),
+            error=routing_result.get("error"),
+            warning=routing_result.get("warning"),
             timestamp=datetime.now().isoformat(),
             session_id=str(request.session_id),
-            request_id=f"req_{int(time.time())}"
+            request_id=f"req_{uuid4()}",
         )
 
-        logger.info(f"Generation completed in {generation_time_ms}ms")
+        logger.info(
+            "Generation completed: action_id=%s in %sms",
+            response.action_id,
+            generation_time_ms,
+        )
         return response
 
     except ValidationError as e:
@@ -135,13 +140,24 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse:
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         # Return graceful fallback
+        fallback_chunks = []
+        try:
+            from generators.chunk_renderer import chunk_text
+
+            fallback_chunks = chunk_text(request.slide_content).get("chunks", [])
+        except Exception:
+            fallback_chunks = []
+
         return GenerateResponse(
             action_id=request.action_id,
-            content=ContentPayload(simplified_text=request.slide_content),
+            content=ContentPayload(
+                simplified_text=request.slide_content,
+                chunks=fallback_chunks,
+            ),
             generation_time_ms=int((time.time() - start_time) * 1000),
             cache_hit=False,
             error=str(e),
             timestamp=datetime.now().isoformat(),
             session_id=str(request.session_id),
-            request_id=f"req_{int(time.time())}"
+            request_id=f"req_{uuid4()}",
         )

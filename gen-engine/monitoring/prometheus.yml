@@ -13,12 +13,7 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 5s
 
-  - job_name: 'ollama'
+  - job_name: 'prometheus'
     static_configs:
-      - targets: ['ollama:11434']
-    scrape_interval: 30s
-
-  - job_name: 'kokoro-tts'
-    static_configs:
-      - targets: ['kokoro-tts:8880']
+      - targets: ['localhost:9090']
     scrape_interval: 30s

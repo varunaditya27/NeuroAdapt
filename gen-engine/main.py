@@ -73,10 +73,13 @@ load_dotenv()
 
 CONFIG = {
     "OLLAMA_URL": os.getenv("OLLAMA_URL", "http://localhost:11434"),
-    "KOKORO_TTS_URL": os.getenv("KOKORO_TTS_URL", "http://localhost:8880"),
-    "POSTGRES_URL": os.getenv("POSTGRES_URL", "postgresql://user:pass@localhost/neuroadapt"),
+    "KOKORO_TTS_URL": os.getenv("TTS_URL", os.getenv("KOKORO_TTS_URL", "http://localhost:8880")),
+    "POSTGRES_URL": os.getenv(
+        "POSTGRES_URL",
+        os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neuroadapt")
+    ),
     "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
-    "CACHE_MAX_SIZE": int(os.getenv("GENERATION_CACHE_SIZE", "100")),
+    "CACHE_MAX_SIZE": int(os.getenv("GENERATION_CACHE_SIZE", os.getenv("CACHE_MAX_SIZE", "100"))),
     "CACHE_TTL_SECONDS": int(os.getenv("CACHE_TTL_SECONDS", "600")),
 }
 

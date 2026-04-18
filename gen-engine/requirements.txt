@@ -9,6 +9,7 @@ pydantic==2.10.6
 # ── HTTP / LLM Integration ───────────────────────────────────────
 requests==2.32.3
 tenacity==9.0.0
+ollama==0.4.1
 
 # ── Text Processing ──────────────────────────────────────────────
 textstat==0.7.3
@@ -27,6 +28,10 @@ Pillow==10.4.0                   # Pillow 11.x breaks torchvision's image transf
 # ── Audio ────────────────────────────────────────────────────────
 pydub==0.25.1
 numpy==1.26.4                    # numpy 2.x breaks torch 2.4.x C extensions at runtime
+manim==0.18.1
+
+# ── Database ─────────────────────────────────────────────────────
+psycopg2-binary==2.9.9
 
 # ── Observability ────────────────────────────────────────────────
 prometheus-client==0.21.0
