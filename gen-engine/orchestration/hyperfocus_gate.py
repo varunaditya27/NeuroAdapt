@@ -118,12 +118,99 @@ RELATED:
 ================================================================================
 """
 
-# TODO: Implement check_hyperfocus() main function
-# TODO: Implement hyperfocus_composite calculation
-# TODO: Define detection threshold (0.75)
-# TODO: Implement should_pre_empt() decision logic
-# TODO: Track pre-emption window (requires state management)
-# TODO: Implement exit criteria checking
-# TODO: Log hyperfocus episodes
-# TODO: Add error handling for missing fields
-# TODO: Add metrics recording
+from __future__ import annotations
+
+import time
+from typing import Any, Dict
+
+
+HYPERFOCUS_THRESHOLD = 0.75
+HYPERFOCUS_EXIT_THRESHOLD = 0.60
+MIN_PREEMPTION_SECONDS = 30
+MAX_PREEMPTION_SECONDS = 2 * 60 * 60
+
+# session_id -> timestamp of pre-emption start
+_PREEMPTION_STATE: Dict[str, float] = {}
+
+
+def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def get_hyperfocus_composite(state_vector: Dict[str, Any]) -> float:
+    """Compute a stable hyperfocus composite from the available state fields."""
+    state = state_vector or {}
+
+    if "hyperfocus_composite" in state:
+        try:
+            return _clamp(float(state["hyperfocus_composite"]))
+        except Exception:
+            pass
+
+    attention_switching = _clamp(float(state.get("attention_switching", 0.5)))
+    engagement_level = _clamp(float(state.get("task_engagement", 0.5)))
+    micro_pause_ratio = _clamp(float(state.get("micro_pause_ratio", 0.4)))
+    time_on_task = max(0.0, float(state.get("time_on_task", 0.0)))
+    time_on_task_bonus = _clamp(time_on_task / 1800.0)  # bonus saturates at ~30 min
+
+    composite = (
+        0.4 * (1.0 - attention_switching)
+        + 0.3 * engagement_level
+        + 0.2 * (1.0 - micro_pause_ratio)
+        + 0.1 * time_on_task_bonus
+    )
+    return _clamp(composite)
+
+
+def check_hyperfocus(state_vector: Dict[str, Any]) -> bool:
+    """One-shot threshold check for hyperfocus."""
+    return get_hyperfocus_composite(state_vector) >= HYPERFOCUS_THRESHOLD
+
+
+def should_pre_empt(
+    session_id: str,
+    state_vector: Dict[str, Any],
+    explicit_break: bool = False,
+    now: float | None = None,
+) -> bool:
+    """
+    Decide whether to route to action_id=0 to protect hyperfocus.
+
+    Hysteresis:
+    - Enter at >= 0.75
+    - Stay pre-empted for at least 30 seconds
+    - Exit at < 0.60 (after minimum window) or max window expiration
+    """
+    if not session_id:
+        return False
+
+    current_time = now if now is not None else time.time()
+
+    if explicit_break:
+        _PREEMPTION_STATE.pop(session_id, None)
+        return False
+
+    score = get_hyperfocus_composite(state_vector)
+    start_time = _PREEMPTION_STATE.get(session_id)
+
+    if start_time is None:
+        if score >= HYPERFOCUS_THRESHOLD:
+            _PREEMPTION_STATE[session_id] = current_time
+            return True
+        return False
+
+    elapsed = current_time - start_time
+    if elapsed < MIN_PREEMPTION_SECONDS:
+        return True
+
+    if elapsed > MAX_PREEMPTION_SECONDS or score < HYPERFOCUS_EXIT_THRESHOLD:
+        _PREEMPTION_STATE.pop(session_id, None)
+        return False
+
+    return True
+
+
+def reset_pre_emption(session_id: str) -> None:
+    """Clear any pre-emption state for a session."""
+    if session_id:
+        _PREEMPTION_STATE.pop(session_id, None)

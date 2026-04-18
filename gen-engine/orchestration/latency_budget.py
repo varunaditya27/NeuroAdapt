@@ -127,13 +127,150 @@ RELATED:
 ================================================================================
 """
 
-# TODO: Implement @latency_budget decorator
-# TODO: Create timeout mapping (action_id → timeout_seconds)
-# TODO: Create fallback strategy mapping (action_id → strategy)
-# TODO: Implement timeout signal handling (threading/asyncio/subprocess)
-# TODO: Implement fallback execution for each strategy
-# TODO: Integrate with hyperfocus pre-emption window
-# TODO: Implement cascading fallbacks for multi-step requests
-# TODO: Add latency measurement and logging
-# TODO: Add metrics recording
-# TODO: Handle timeout signal unresponsiveness (force kill)
+from __future__ import annotations
+
+import asyncio
+import functools
+import inspect
+import os
+import time
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+
+
+ACTION_TIMEOUTS: Dict[int, float] = {
+    0: 0.5,
+    1: 1.0,
+    2: float(os.getenv("LATENCY_BUDGET_TEXT_SIMPLIFY", "5")),
+    3: float(os.getenv("LATENCY_BUDGET_MANIM", "45")),
+    4: 5.0,
+    5: 1.0,
+}
+
+ACTION_FALLBACKS: Dict[int, str] = {
+    0: "skip_modality",
+    1: "original_text",
+    2: "original_text",
+    3: "skip_modality",
+    4: "hardcoded_template",
+    5: "placeholder",
+}
+
+
+def get_timeout_for_action(action_id: int) -> float:
+    return max(0.1, ACTION_TIMEOUTS.get(action_id, 5.0))
+
+
+def get_fallback_strategy(action_id: int) -> str:
+    return ACTION_FALLBACKS.get(action_id, "placeholder")
+
+
+def apply_fallback(
+    action_id: int,
+    fallback_strategy: str,
+    original_input: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Return deterministic fallback payload for a failed/timed-out generation."""
+    if fallback_strategy == "original_text":
+        return {
+            "simplified_text": original_input if isinstance(original_input, str) else "",
+            "chunks": [],
+            "cache_hit": False,
+            "warning": "Returned original text due to timeout/failure.",
+        }
+    if fallback_strategy == "skip_modality":
+        return {
+            "skipped": True,
+            "cache_hit": False,
+            "warning": "Skipped modality due to timeout/failure.",
+        }
+    if fallback_strategy == "hardcoded_template":
+        return {
+            "quiz_json": [
+                {
+                    "id": 1,
+                    "text": "Quick check: Which option best matches the current concept?",
+                    "options": ["Option A", "Option B", "Option C", "Option D"],
+                    "correct_index": 0,
+                    "difficulty": "easy",
+                }
+            ],
+            "mastery_level": "moderate",
+            "estimated_time_seconds": 60,
+            "cache_hit": False,
+            "warning": "Returned template quiz due to timeout/failure.",
+        }
+    return {
+        "cache_hit": False,
+        "warning": "Returned placeholder due to timeout/failure.",
+    }
+
+
+async def _invoke_callable(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    if inspect.iscoroutinefunction(func):
+        return await func(*args, **kwargs)
+    return await asyncio.to_thread(func, *args, **kwargs)
+
+
+async def execute_with_timeout(
+    func: Callable[..., Any],
+    *args: Any,
+    action_id: int,
+    timeout_seconds: Optional[float] = None,
+    fallback_strategy: Optional[str] = None,
+    fallback_value: Optional[Any] = None,
+    **kwargs: Any,
+) -> Tuple[Any, Optional[str], Optional[str], int]:
+    """
+    Execute a callable with an action-specific timeout.
+
+    Returns:
+        (result, error, warning, latency_ms)
+    """
+    start = time.perf_counter()
+    timeout = timeout_seconds or get_timeout_for_action(action_id)
+    strategy = fallback_strategy or get_fallback_strategy(action_id)
+
+    try:
+        result = await asyncio.wait_for(_invoke_callable(func, *args, **kwargs), timeout=timeout)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        return result, None, None, latency_ms
+    except asyncio.TimeoutError:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        warning = f"Generation timed out after {timeout:.2f}s; fallback '{strategy}' applied."
+        fallback = fallback_value if fallback_value is not None else apply_fallback(action_id, strategy, args[0] if args else None)
+        return fallback, "timeout", warning, latency_ms
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        warning = f"Generation failed; fallback '{strategy}' applied."
+        fallback = fallback_value if fallback_value is not None else apply_fallback(action_id, strategy, args[0] if args else None)
+        return fallback, f"generator_error: {exc}", warning, latency_ms
+
+
+def latency_budget(
+    action_id: int,
+    timeout_seconds: Optional[float] = None,
+    fallback_strategy: Optional[str] = None,
+):
+    """Decorator wrapper that enforces latency budgets on generator functions."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result, error, warning, _latency_ms = await execute_with_timeout(
+                func,
+                *args,
+                action_id=action_id,
+                timeout_seconds=timeout_seconds,
+                fallback_strategy=fallback_strategy,
+                **kwargs,
+            )
+            if isinstance(result, dict):
+                if warning and not result.get("warning"):
+                    result["warning"] = warning
+                if error and not result.get("error"):
+                    result["error"] = error
+            return result
+
+        return wrapper
+
+    return decorator
