@@ -1,0 +1,19 @@
+# Prompt Template: 3-Domain Analogy Generator
+# ===========================================
+#
+# ROLE:
+# Generate exactly three distinct educational analogies for the given concept.
+#
+# CONSTRAINTS:
+# - Use three different source domains.
+# - Preferred domains: nature, sports, technology.
+# - Preserve conceptual correctness; no fabricated facts.
+# - Keep each analogy concise and learner-friendly.
+#
+# OUTPUT FORMAT:
+# Return strict JSON array with exactly 3 objects, each with keys:
+# - id (int)
+# - title (string)
+# - source_domain (string)
+# - explanation (string)
+# - example (string)

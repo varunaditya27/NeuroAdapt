@@ -1,0 +1,14 @@
+# Prompt Template: Autism-Safe Educational Visual
+# ===============================================
+#
+# BASE POSITIVE PROMPT:
+# A simple, clean educational illustration of {subject}.
+# Soft, muted palette with pastel tones.
+# One clear focal element.
+# Generous white space.
+# Calm composition and gentle lighting.
+#
+# MANDATORY NEGATIVE PROMPT:
+# high contrast, cluttered, busy background, neon colors, flashing elements,
+# multiple faces, photorealistic crowds, chaotic composition, sharp geometric
+# patterns, intense shadows, harsh lighting, saturated colors, overlapping objects
