@@ -348,6 +348,26 @@ sequenceDiagram
 
 ---
 
+## 🧾 Runtime Metadata (Degradation + Transparency)
+
+When fallback/degradation happens, payloads may include explicit metadata so downstream UI and logs can stay truthful:
+
+| Field | Meaning | Example |
+|---|---|---|
+| `generation_mode` | Runtime generation path used | `sd_generated`, `svg_fallback`, `text_fallback` |
+| `fallback_stage` | Specific degradation stage identifier | `text_simplify_timeout`, `image_diffusion_failure` |
+| `safety_prompt_applied` | Whether autism-safe prompt constraints were applied | `true` |
+| `safety_verified` | Whether explicit post-generation safety verification actually ran | `false` |
+| `safety_verification_method` | Safety verification method used | `prompt_only`, `not_performed` |
+| `timestamp_confidence` | Confidence level for TTS word timestamps | `high`, `heuristic` |
+
+For prefetch-heavy requests, wait tuning can be adjusted via env vars:
+- `PREFETCH_WAIT_SECONDS` (global baseline)
+- `PREFETCH_WAIT_SECONDS_ACTION3` (heavier visual/audio path)
+- `PREFETCH_WAIT_SECONDS_ACTION4` (quiz path)
+
+---
+
 ## 💰 The Cost Gate
 
 `/api/generate` is only called when `confidence ≥ 0.60`. In well-matched sessions (learner is in flow), most 30-second intervals result in `action_id = 0` — no API calls, zero cost.
@@ -411,10 +431,28 @@ Generate content in target format based on action_id.
     "simplified_text": "Plants make their own food using sunlight...",
     "fk_grade": 7.8,
     "original_fk": 12.3,
-    "chunks": ["Plants make their own food using sunlight.", "This process is called photosynthesis.", ...]
+        "chunks": [
+            {
+                "text": "Plants make their own food using sunlight.",
+                "readability_grade": 6.4,
+                "word_count": 7
+            }
+        ]
   },
   "generation_time_ms": 2847,
   "cache_hit": false
+}
+```
+
+**Response (degraded timeout example):**
+```json
+{
+    "action_id": 2,
+    "content": {
+        "simplified_text": "<original text>",
+        "fallback_stage": "text_simplify_timeout",
+        "generation_mode": "text_fallback"
+    }
 }
 ```
 
@@ -429,6 +467,24 @@ Generate content in target format based on action_id.
 **Compatibility notes:**
 - `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
 - `concept_id` is accepted as an alias for `concept`.
+
+### `GET /health`
+
+Dependency checks are refreshed with throttling and include recency metadata:
+
+```json
+{
+    "status": "healthy",
+    "services": {
+        "Ollama": {
+            "status": "up",
+            "last_check": "2026-04-19T10:25:11.123456",
+            "checked_seconds_ago": 0.42,
+            "error": null
+        }
+    }
+}
+```
 
 ---
 

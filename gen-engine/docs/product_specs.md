@@ -331,8 +331,10 @@ The gen-engine microservice transforms educational content into neurodivergent-o
 - **Metrics:** Prometheus `/metrics` endpoint exposed
   - Request count by action_id
   - Latency histogram per generator
-  - FK verification pass rate
-  - Hyperfocus detection events
+  - Fallback events by stage
+  - Timeout events by stage
+  - FK verification outcomes (`met` / `missed` / `unknown`) by learner level
+  - Hyperfocus override events
   - Cache hit rate
 - **Logs:** Structured JSON logs (stdout) → collected by Promtail
 - **Tracing:** OpenTelemetry spans for request flow (Phase 3)
@@ -380,13 +382,25 @@ Notes:
     "simplified_text": "The mitochondria makes energy for the cell...",
     "fk_grade": 7.8,
     "original_fk": 12.3,
-    "chunks": ["The mitochondria makes energy for the cell.", "This energy is called ATP.", ...]
+    "chunks": [
+      {
+        "text": "The mitochondria makes energy for the cell.",
+        "readability_grade": 6.4,
+        "word_count": 7
+      }
+    ]
   },
   "generation_time_ms": 2847,
   "cache_hit": false,
   "hyperfocus_override": false
 }
 ```
+
+For degraded responses, `content` may include:
+- `fallback_stage` (e.g., `text_simplify_timeout`, `image_diffusion_failure`)
+- `generation_mode` (e.g., `text_fallback`, `svg_fallback`, `sd_generated`)
+- `safety_prompt_applied`, `safety_verified`, `safety_verification_method` (visual generation transparency)
+- `timestamp_confidence` (`high`/`heuristic`) for TTS word timings
 
 **Response (204 No Content):**  
 Returned when hyperfocus gate triggers or action_id = 0.
@@ -431,7 +445,15 @@ Readiness probe for Kubernetes/Docker.
   "ollama_reachable": true,
   "kokoro_reachable": true,
   "disk_space_gb": 45.2,
-  "cache_size_mb": 1830
+  "cache_size_mb": 1830,
+  "services": {
+    "Ollama": {
+      "status": "up",
+      "last_check": "2026-04-19T10:25:11.123456",
+      "checked_seconds_ago": 0.42,
+      "error": null
+    }
+  }
 }
 ```
 

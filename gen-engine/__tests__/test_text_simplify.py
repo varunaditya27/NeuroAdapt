@@ -69,3 +69,29 @@ def test_empty_input_still_returns_valid_shape():
     result = ts.simplify_text(" ", target_level="grade8")
     assert "simplified_text" in result
     assert "chunks" in result
+
+
+def test_empty_first_response_retries_strict_before_fallback(monkeypatch):
+    ts._CACHE.clear()
+
+    calls = {"n": 0}
+
+    def fake_call(_prompt: str, timeout_seconds: float = 4.0):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ""
+        return "SIMPLE strict retry output"
+
+    def fake_fk(text: str) -> float:
+        if "SIMPLE" in text:
+            return 7.0
+        return 11.0
+
+    monkeypatch.setattr(ts, "_call_ollama", fake_call)
+    monkeypatch.setattr(ts, "compute_fk_grade", fake_fk)
+
+    result = ts.simplify_text("Complex source text", target_level="grade8")
+
+    assert calls["n"] == 2
+    assert result["simplified_text"] == "SIMPLE strict retry output"
+    assert result["fk_grade"] <= ts.TARGETS["grade8"]

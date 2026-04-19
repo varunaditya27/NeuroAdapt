@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from orchestration.latency_budget import fallback_for, run_with_timeout
@@ -54,3 +55,57 @@ def test_prefetch_manager_round_trip():
     status = manager.get_status(action_id=3, request_data=request)
     assert status["status"] == "ready"
     assert status["cache_hit"] is True
+
+
+def test_prefetch_content_type_alias_is_retrievable_with_auto_key():
+    manager = PrefetchManager(max_workers=1, ttl_seconds=60, max_entries=10)
+    manager.set_generator(lambda action_id, _request: {"action_id": action_id, "ready": True})
+
+    prefetch_request = {
+        "session_id": "s_alias",
+        "slide_content": "Momentum conservation",
+        "content_type": "stem",
+    }
+    query_request = {
+        "session_id": "s_alias",
+        "slide_content": "Momentum conservation",
+        # no content_type on generate request
+    }
+
+    queued = manager.start_prefetch([3], prefetch_request)
+    assert queued == 1
+
+    value, cache_hit = manager.get_cached_or_wait(action_id=3, request_data=query_request, timeout=2)
+    assert cache_hit is True
+    assert value is not None
+    assert value["action_id"] == 3
+
+
+def test_clear_session_prevents_stale_result_from_repopulating_cache():
+    manager = PrefetchManager(max_workers=1, ttl_seconds=60, max_entries=10)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_generator(action_id, _request):
+        started.set()
+        release.wait(timeout=1)
+        return {"action_id": action_id, "ready": True}
+
+    manager.set_generator(slow_generator)
+    request = {
+        "session_id": "s_clear",
+        "slide_content": "Friction and force",
+        "content_type": "animation",
+    }
+
+    queued = manager.start_prefetch([3], request)
+    assert queued == 1
+    assert started.wait(timeout=0.5)
+
+    manager.clear_session("s_clear")
+    release.set()
+    time.sleep(0.05)
+
+    status = manager.get_status(action_id=3, request_data=request)
+    assert status["status"] == "missing"
+    assert status["cache_hit"] is False

@@ -266,42 +266,67 @@ class PrefetchManager:
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.cache: Dict[str, Any] = {}
         self.active_tasks: Dict[str, Future] = {}
+        self.cleared_sessions: set[str] = set()
+
+    def _candidate_keys(self, session_id: str, action_id: int, slide_content: str, content_type: str | None):
+        """
+        Normalize content_type hints (`stem` -> `animation`, `visual` -> `image`) and
+        keep an `auto` alias key so prefetch and generate requests can match even when
+        one request provides content_type and the other omits it.
+        """
+        normalized = normalize_content_type(content_type)  # animation/image/audio/avatar/auto
+        keys = [f"{session_id}:{action_id}:{normalized}:{hash(slide_content)}"]
+        if normalized != "auto":
+            keys.append(f"{session_id}:{action_id}:auto:{hash(slide_content)}")
+        return dedupe(keys)
     
     def start_prefetch(self, action_candidates: list[int], slide_content: str, session_id: str):
         """Called when Orchestrator posts top-2 Q-values"""
         for action_id in action_candidates[:2]:  # Top 2 only
-            cache_key = f"{session_id}:{action_id}:{hash(slide_content)}"
-            
-            if cache_key in self.cache:
+            cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type=None)
+
+            if any(key in self.cache for key in cache_keys):
                 continue  # Already cached
-            
+            if any(key in self.active_tasks for key in cache_keys):
+                continue  # Already in-flight
+
             # Submit background task
             future = self.executor.submit(
                 self._generate_for_action,
                 action_id, slide_content, session_id
             )
-            self.active_tasks[cache_key] = future
+            for key in cache_keys:
+                self.active_tasks[key] = future
     
-    def get_cached_or_wait(self, action_id: int, slide_content: str, session_id: str, timeout: int = 30):
+    def get_cached_or_wait(self, action_id: int, slide_content: str, session_id: str, timeout: int = 30, content_type: str | None = None):
         """Called when action is confirmed — blocks until ready or timeout"""
-        cache_key = f"{session_id}:{action_id}:{hash(slide_content)}"
+        cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
         
         # Immediate cache hit
-        if cache_key in self.cache:
-            return self.cache[cache_key]
+        for key in cache_keys:
+            if key in self.cache:
+                return self.cache[key]
         
         # Wait for active task
-        if cache_key in self.active_tasks:
-            future = self.active_tasks[cache_key]
+        future = first_existing_future(self.active_tasks, cache_keys)
+        if future is not None:
             try:
                 result = future.result(timeout=timeout)
-                self.cache[cache_key] = result
+                if session_id in self.cleared_sessions:
+                    return None
+                for key in cache_keys:
+                    self.cache[key] = result
                 return result
             except TimeoutError:
                 return self._fallback_content(action_id)
         
         # Not pre-fetched — generate now (synchronous fallback)
         return self._generate_for_action(action_id, slide_content, session_id)
+
+    def clear_session(self, session_id: str):
+        """Prevent stale in-flight tasks from repopulating cache after session reset."""
+        self.cleared_sessions.add(session_id)
+        drop_cache_and_active_keys_for_session(session_id)
 ```
 
 ### Cache Eviction Policy

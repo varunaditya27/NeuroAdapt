@@ -132,3 +132,25 @@ def test_route_action_three_normalizes_stem_content_type(monkeypatch):
     assert called["manim"] == 1
     assert called["image"] == 0
     assert routed["content"].get("video_url") == "/tmp/demo.mp4"
+
+
+def test_action_two_timeout_includes_fallback_metadata(monkeypatch):
+    def fake_timeout(_func, _timeout, *_args, **_kwargs):
+        return {}, True, 5000, "timeout"
+
+    monkeypatch.setattr(ar, "run_with_timeout", fake_timeout)
+
+    request = GenerateRequest(
+        action_id=2,
+        slide_content="Dense text for timeout fallback.",
+        learner_level="grade8",
+        session_id=uuid4(),
+        confidence=0.8,
+        state_vector=_base_state(),
+    )
+
+    routed = route_and_generate(request)
+    content = routed["content"]
+    assert content.get("fallback_stage") == "text_simplify_timeout"
+    assert content.get("generation_mode") == "text_fallback"
+    assert isinstance(content.get("chunks"), list)
