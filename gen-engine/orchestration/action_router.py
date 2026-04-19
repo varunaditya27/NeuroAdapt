@@ -289,6 +289,17 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
         }
 
     prefetch_wait_seconds = max(0.0, float(os.getenv("PREFETCH_WAIT_SECONDS", "0.8")))
+    if request.action_id == 3:
+        prefetch_wait_seconds = max(
+            prefetch_wait_seconds,
+            float(os.getenv("PREFETCH_WAIT_SECONDS_ACTION3", "4.0")),
+        )
+    elif request.action_id == 4:
+        prefetch_wait_seconds = max(
+            prefetch_wait_seconds,
+            float(os.getenv("PREFETCH_WAIT_SECONDS_ACTION4", "1.2")),
+        )
+
     cached, cache_hit = prefetch_manager.get_cached_or_wait(
         request.action_id,
         request_data,

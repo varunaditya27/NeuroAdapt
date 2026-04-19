@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
@@ -20,6 +21,7 @@ class _SessionState:
 
 
 _SESSION_STATES: Dict[str, _SessionState] = {}
+_SESSION_LOCK = threading.Lock()
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -93,36 +95,38 @@ def check_hyperfocus(session_id: str, state_vector: Dict[str, Any]) -> Tuple[boo
     now = time.time()
     composite = compute_hyperfocus_composite(state_vector)
 
-    session = _SESSION_STATES.setdefault(session_id, _SessionState())
-    session.last_composite = composite
+    with _SESSION_LOCK:
+        session = _SESSION_STATES.setdefault(session_id, _SessionState())
+        session.last_composite = composite
 
-    if not session.active:
-        if composite >= ENTER_THRESHOLD:
-            session.active = True
-            session.activated_at = now
-            session.below_exit_since = None
-            return True, composite, "hyperfocus_entered"
-        return False, composite, "normal_flow"
+        if not session.active:
+            if composite >= ENTER_THRESHOLD:
+                session.active = True
+                session.activated_at = now
+                session.below_exit_since = None
+                return True, composite, "hyperfocus_entered"
+            return False, composite, "normal_flow"
 
-    # Already active preemption mode.
-    if composite < EXIT_THRESHOLD:
-        if session.below_exit_since is None:
-            session.below_exit_since = now
-            return True, composite, "hyperfocus_hold_exit_timer_started"
+        # Already active preemption mode.
+        if composite < EXIT_THRESHOLD:
+            if session.below_exit_since is None:
+                session.below_exit_since = now
+                return True, composite, "hyperfocus_hold_exit_timer_started"
 
-        stable_duration = now - session.below_exit_since
-        if stable_duration >= MIN_EXIT_STABLE_SECONDS:
-            session.active = False
-            session.activated_at = 0.0
-            session.below_exit_since = None
-            return False, composite, "hyperfocus_exited"
+            stable_duration = now - session.below_exit_since
+            if stable_duration >= MIN_EXIT_STABLE_SECONDS:
+                session.active = False
+                session.activated_at = 0.0
+                session.below_exit_since = None
+                return False, composite, "hyperfocus_exited"
 
-        return True, composite, "hyperfocus_hold_exit_timer_running"
+            return True, composite, "hyperfocus_hold_exit_timer_running"
 
-    # Composite rose again; remain in protected mode.
-    session.below_exit_since = None
-    return True, composite, "hyperfocus_active"
+        # Composite rose again; remain in protected mode.
+        session.below_exit_since = None
+        return True, composite, "hyperfocus_active"
 
 
 def clear_session(session_id: str) -> None:
-    _SESSION_STATES.pop(session_id, None)
+    with _SESSION_LOCK:
+        _SESSION_STATES.pop(session_id, None)

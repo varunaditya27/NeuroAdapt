@@ -30,6 +30,8 @@ def fallback_for(kind: str, original_text: str = "") -> Dict[str, Any]:
         return {
             "simplified_text": original_text,
             "warning": "Text simplification timed out; served original text.",
+            "fallback_stage": "text_simplify_timeout",
+            "generation_mode": "text_fallback",
         }
     if kind == "quiz":
         return {
@@ -48,10 +50,20 @@ def fallback_for(kind: str, original_text: str = "") -> Dict[str, Any]:
                 }
             ],
             "warning": "Quiz generation timed out; served fallback quiz.",
+            "fallback_stage": "quiz_timeout",
+            "generation_mode": "quiz_fallback",
         }
     if kind in {"image", "manim", "avatar", "audio", "analogy"}:
-        return {"warning": f"{kind} generation timed out; fallback content applied."}
-    return {"warning": "Generation timed out; fallback content applied."}
+        return {
+            "warning": f"{kind} generation timed out; fallback content applied.",
+            "fallback_stage": f"{kind}_timeout",
+            "generation_mode": f"{kind}_fallback",
+        }
+    return {
+        "warning": "Generation timed out; fallback content applied.",
+        "fallback_stage": "unknown_timeout",
+        "generation_mode": "generic_fallback",
+    }
 
 
 def run_with_timeout(

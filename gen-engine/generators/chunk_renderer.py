@@ -80,6 +80,38 @@ def _merge_short_sentences(sentences: List[str], min_words: int = 8) -> List[str
     return merged
 
 
+def _enforce_min_chars(units: List[str], min_chars: int = 10) -> List[str]:
+    """Ensure chunks are meaningful by merging fragments smaller than `min_chars`."""
+    out: List[str] = []
+    carry = ""
+
+    for unit in units:
+        current = unit.strip()
+        if not current:
+            continue
+
+        if carry:
+            current = f"{carry} {current}".strip()
+            carry = ""
+
+        if len(current) < min_chars:
+            if out:
+                out[-1] = f"{out[-1]} {current}".strip()
+            else:
+                carry = current
+            continue
+
+        out.append(current)
+
+    if carry:
+        if out:
+            out[-1] = f"{out[-1]} {carry}".strip()
+        else:
+            out.append(carry)
+
+    return out
+
+
 def estimate_read_time_seconds(chunks: List[dict], wpm: int = 180) -> int:
     words = sum(int(chunk.get("word_count", 0)) for chunk in chunks)
     return max(1, int((words / max(120, wpm)) * 60))
@@ -109,6 +141,8 @@ def chunk_text(
         units = _split_sentences(cleaned)
         if chunk_strategy == "hybrid":
             units = _merge_short_sentences(units)
+
+    units = _enforce_min_chars(units, min_chars=10)
 
     if not preserve_formatting:
         units = [" ".join(u.split()) for u in units]

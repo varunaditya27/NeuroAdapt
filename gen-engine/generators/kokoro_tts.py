@@ -55,7 +55,7 @@ def _heuristic_word_timestamps(text: str, duration_ms: int) -> List[dict]:
     return out
 
 
-def extract_word_timestamps(audio_path: str, text: str | None = None) -> List[dict]:
+def extract_word_timestamps_with_confidence(audio_path: str, text: str | None = None) -> tuple[List[dict], str]:
     """Use Kokoro alignment endpoint if available, else fall back to heuristic timings."""
     try:
         response = requests.get(
@@ -67,12 +67,18 @@ def extract_word_timestamps(audio_path: str, text: str | None = None) -> List[di
         data = response.json()
         stamps = data.get("timestamps")
         if isinstance(stamps, list):
-            return stamps
+            return stamps, "high"
     except Exception:
         pass
 
     duration_ms = _duration_from_wav(Path(audio_path))
-    return _heuristic_word_timestamps(text or "", duration_ms)
+    return _heuristic_word_timestamps(text or "", duration_ms), "heuristic"
+
+
+def extract_word_timestamps(audio_path: str, text: str | None = None) -> List[dict]:
+    """Backward-compatible helper returning only timestamp entries."""
+    stamps, _ = extract_word_timestamps_with_confidence(audio_path, text=text)
+    return stamps
 
 
 def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> Dict:
@@ -111,11 +117,12 @@ def generate_tts(
 
     if wav_path.exists():
         duration_ms = _duration_from_wav(wav_path)
-        timestamps = _heuristic_word_timestamps(text, duration_ms)
+        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
         return {
             "audio_url": str(wav_path),
             "duration_ms": duration_ms,
             "word_timestamps": timestamps,
+            "timestamp_confidence": timestamp_confidence,
             "voice_profile": voice,
             "cache_hit": True,
         }
@@ -138,12 +145,13 @@ def generate_tts(
         wav_path.write_bytes(response.content)
 
         duration_ms = _duration_from_wav(wav_path)
-        timestamps = extract_word_timestamps(str(wav_path), text=text)
+        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
 
         return {
             "audio_url": str(wav_path),
             "duration_ms": duration_ms,
             "word_timestamps": timestamps,
+            "timestamp_confidence": timestamp_confidence,
             "voice_profile": voice,
             "cache_hit": False,
             "learner_id": learner_id,
@@ -154,6 +162,7 @@ def generate_tts(
             "audio_url": None,
             "duration_ms": 0,
             "word_timestamps": [],
+            "timestamp_confidence": None,
             "voice_profile": voice,
             "warning": f"Kokoro unavailable; served text-only fallback ({exc}).",
         }

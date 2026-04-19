@@ -149,6 +149,7 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
     best_fk = compute_fk_grade(best_text)
     attempts = 0
     warning = None
+    service_warning = None
 
     base_prompt = _load_prompt(normalized_level)
 
@@ -159,9 +160,17 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
 
         try:
             candidate = _call_ollama(prompt, timeout_seconds=4.0 if not strict else 4.5)
-            if not candidate:
-                candidate = _heuristic_simplify(text)
-        except Exception:
+        except Exception as exc:
+            if attempt < 2:
+                continue
+            service_warning = f"LLM unavailable on strict retry; heuristic fallback used ({exc})."
+            candidate = _heuristic_simplify(text)
+
+        if not candidate:
+            if attempt < 2:
+                # Allow strict retry before giving up.
+                continue
+            service_warning = service_warning or "LLM returned empty output twice; heuristic fallback used."
             candidate = _heuristic_simplify(text)
 
         candidate_fk = compute_fk_grade(candidate)
@@ -177,6 +186,9 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
             f"FK target not fully met (target≤{fk_target}, actual={best_fk}). "
             "Serving best available simplification."
         )
+
+    if service_warning:
+        warning = f"{warning} {service_warning}".strip() if warning else service_warning
 
     chunks_payload = chunk_text(best_text, chunk_strategy="sentence")
 

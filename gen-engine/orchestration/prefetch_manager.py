@@ -6,7 +6,7 @@ import hashlib
 import os
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -27,9 +27,40 @@ class PrefetchManager:
         self._active: Dict[str, Future] = {}
         self._lock = threading.Lock()
         self._generator: Optional[Callable[[int, dict], dict]] = None
+        self._cleared_sessions: set[str] = set()
+
+    _PREFETCHABLE_ACTIONS = {2, 3, 4}
+    _CONTENT_TYPE_NORMALIZATION = {
+        "animation": "animation",
+        "video": "animation",
+        "manim": "animation",
+        "stem": "animation",
+        "math": "animation",
+        "physics": "animation",
+        "algorithm": "animation",
+        "process": "animation",
+        "image": "image",
+        "visual": "image",
+        "illustration": "image",
+        "graphic": "image",
+        "general": "image",
+        "audio": "audio",
+        "tts": "audio",
+        "speech": "audio",
+        "avatar": "avatar",
+        "liveportrait": "avatar",
+        "video_avatar": "avatar",
+        "auto": "auto",
+    }
 
     def set_generator(self, callback: Callable[[int, dict], dict]) -> None:
         self._generator = callback
+
+    def _normalize_content_type(self, content_type: Any) -> str:
+        if content_type is None:
+            return "auto"
+        normalized = self._CONTENT_TYPE_NORMALIZATION.get(str(content_type).strip().lower())
+        return normalized or "auto"
 
     def _make_key(
         self,
@@ -39,7 +70,8 @@ class PrefetchManager:
         content_type: str | None = None,
     ) -> str:
         content_hash = hashlib.md5(slide_content.encode("utf-8")).hexdigest()
-        return f"{session_id}:{action_id}:{content_type or 'auto'}:{content_hash}"
+        normalized_content_type = self._normalize_content_type(content_type)
+        return f"{session_id}:{action_id}:{normalized_content_type}:{content_hash}"
 
     def _candidate_keys(
         self,
@@ -48,9 +80,10 @@ class PrefetchManager:
         slide_content: str,
         content_type: str | None = None,
     ) -> List[str]:
-        explicit = self._make_key(session_id, action_id, slide_content, content_type)
+        normalized_content_type = self._normalize_content_type(content_type)
+        explicit = self._make_key(session_id, action_id, slide_content, normalized_content_type)
         keys = [explicit]
-        if content_type not in {None, "", "auto"}:
+        if normalized_content_type != "auto":
             keys.append(self._make_key(session_id, action_id, slide_content, None))
         # Preserve order while removing duplicates.
         seen = set()
@@ -87,19 +120,38 @@ class PrefetchManager:
                     out.append(int(item["action_id"]))
                 except Exception:
                     continue
-        return [a for a in out if 0 <= a <= 5]
+        # Preserve order while filtering to useful speculative actions only.
+        deduped: List[int] = []
+        seen = set()
+        for action_id in out:
+            if action_id in seen:
+                continue
+            seen.add(action_id)
+            if action_id in self._PREFETCHABLE_ACTIONS:
+                deduped.append(action_id)
+        return deduped
 
-    def _on_done(self, key: str, future: Future) -> None:
+    def _on_done(self, cache_keys: List[str], future: Future) -> None:
         with self._lock:
-            self._active.pop(key, None)
+            for key in cache_keys:
+                self._active.pop(key, None)
 
         try:
             value = future.result()
         except Exception as exc:
             value = {"warning": f"prefetch_failed: {exc}"}
 
+        if not isinstance(value, dict):
+            value = {"result": value}
+
+        session_id = cache_keys[0].split(":", 1)[0] if cache_keys else ""
+
         with self._lock:
-            self._cache[key] = _CacheEntry(value=value, created_at=time.time())
+            if session_id in self._cleared_sessions:
+                return
+            now = time.time()
+            for key in cache_keys:
+                self._cache[key] = _CacheEntry(value=value, created_at=now)
             self._prune_locked()
 
     def start_prefetch(self, action_candidates: Iterable[Any], request_data: dict) -> int:
@@ -111,26 +163,32 @@ class PrefetchManager:
         actions = self._normalize_actions(action_candidates)[:2]
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
+        self._cleared_sessions.discard(session_id)
 
         for action_id in actions:
             content_type = request_data.get("content_type")
-            key = self._make_key(session_id, action_id, slide_content, content_type)
+            cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+            if not cache_keys:
+                continue
             future: Future | None = None
 
             with self._lock:
                 self._prune_locked()
-                if key in self._cache or key in self._active:
+                if any(key in self._cache for key in cache_keys):
+                    continue
+                if any(key in self._active for key in cache_keys):
                     continue
 
                 future = self.executor.submit(self._generator, action_id, dict(request_data))
-                self._active[key] = future
+                for key in cache_keys:
+                    self._active[key] = future
                 queued += 1
 
             # Register callback outside lock.
             # If the future already finished, callback executes immediately in this thread;
             # outside-lock registration prevents deadlocks against _on_done locking.
             if future is not None:
-                future.add_done_callback(lambda f, cache_key=key: self._on_done(cache_key, f))
+                future.add_done_callback(lambda f, keys=list(cache_keys): self._on_done(keys, f))
 
         return queued
 
@@ -159,8 +217,8 @@ class PrefetchManager:
         keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
 
         selected_key: str | None = None
+        future: Future | None = None
         with self._lock:
-            future = None
             for key in keys:
                 maybe = self._active.get(key)
                 if maybe is not None:
@@ -173,13 +231,23 @@ class PrefetchManager:
 
         try:
             value = future.result(timeout=timeout)
+        except FutureTimeout:
+            return None, False
         except Exception:
             return None, False
 
+        if not isinstance(value, dict):
+            value = {"result": value}
+
+        session_id = keys[0].split(":", 1)[0] if keys else ""
+
         with self._lock:
+            if session_id in self._cleared_sessions:
+                return None, False
             now = time.time()
             for key in keys:
                 self._cache[key] = _CacheEntry(value=value, created_at=now)
+                self._active.pop(key, None)
             if selected_key is not None:
                 self._active.pop(selected_key, None)
             self._prune_locked()
@@ -206,9 +274,19 @@ class PrefetchManager:
 
     def clear_session(self, session_id: str) -> None:
         with self._lock:
+            self._cleared_sessions.add(session_id)
             keys = [k for k in self._cache if k.startswith(f"{session_id}:")]
             for key in keys:
                 self._cache.pop(key, None)
+
+            active_keys = [k for k in self._active if k.startswith(f"{session_id}:")]
+            futures = {self._active.get(k) for k in active_keys}
+            for key in active_keys:
+                self._active.pop(key, None)
+
+        for future in futures:
+            if future is not None:
+                future.cancel()
 
 
 prefetch_manager = PrefetchManager(
