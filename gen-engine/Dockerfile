@@ -7,7 +7,7 @@
 # RUN:
 #   docker run -p 8001:8001 \
 #     -e OLLAMA_URL=http://ollama:11434 \
-#     -e TTS_URL=http://kokoro-tts:8880 \
+#     -e KOKORO_TTS_URL=http://kokoro-tts:8880 \
 #     neuroadapt/gen-engine:1.0.0
 #
 # DEPENDENCIES:
@@ -24,14 +24,14 @@
 FROM python:3.11-slim
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     curl \
     ffmpeg \
-    libcairo2 \
-    libpango-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
+    pkg-config \
+    build-essential \
+    libcairo2-dev \
+    libpango1.0-dev \
     libffi-dev \
-    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

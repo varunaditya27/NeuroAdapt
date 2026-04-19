@@ -55,6 +55,7 @@ METRICS (Prometheus):
 import os
 import sys
 import logging
+import shutil
 from pathlib import Path
 from datetime import datetime
 import time
@@ -73,13 +74,10 @@ load_dotenv()
 
 CONFIG = {
     "OLLAMA_URL": os.getenv("OLLAMA_URL", "http://localhost:11434"),
-    "KOKORO_TTS_URL": os.getenv("TTS_URL", os.getenv("KOKORO_TTS_URL", "http://localhost:8880")),
-    "POSTGRES_URL": os.getenv(
-        "POSTGRES_URL",
-        os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neuroadapt")
-    ),
+    "KOKORO_TTS_URL": os.getenv("KOKORO_TTS_URL") or os.getenv("TTS_URL", "http://localhost:8880"),
+    "POSTGRES_URL": os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/neuroadapt"),
     "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
-    "CACHE_MAX_SIZE": int(os.getenv("GENERATION_CACHE_SIZE", os.getenv("CACHE_MAX_SIZE", "100"))),
+    "CACHE_MAX_SIZE": int(os.getenv("CACHE_MAX_SIZE", os.getenv("GENERATION_CACHE_SIZE", "100"))),
     "CACHE_TTL_SECONDS": int(os.getenv("CACHE_TTL_SECONDS", "600")),
 }
 
@@ -99,6 +97,7 @@ except ImportError:
     logger.warning("prometheus-client not available, metrics disabled")
 
 from routers import generate, health
+from orchestration.prefetch_manager import prefetch_manager
 
 # ============================================================================
 # FASTAPI APP INITIALIZATION
@@ -184,6 +183,22 @@ def load_prompts() -> dict:
     
     return prompts
 
+
+def _directory_size_mb(path: Path) -> float:
+    """Best-effort recursive directory size in megabytes."""
+    if not path.exists():
+        return 0.0
+
+    total_bytes = 0
+    try:
+        for entry in path.rglob("*"):
+            if entry.is_file():
+                total_bytes += entry.stat().st_size
+    except Exception:
+        return 0.0
+
+    return round(total_bytes / (1024 * 1024), 1)
+
 # ============================================================================
 # STARTUP & SHUTDOWN EVENTS
 # ============================================================================
@@ -262,14 +277,26 @@ async def health_check():
             "status": "up" if service_info["available"] else "down",
             "error": service_info["error"],
         }
+
+    ollama_reachable = bool(app_state["services"].get("Ollama", {}).get("available", False))
+    kokoro_reachable = bool(app_state["services"].get("Kokoro TTS", {}).get("available", False))
+
+    disk = shutil.disk_usage("/")
+    disk_space_gb = round(disk.free / (1024**3), 1)
+    cache_size_mb = _directory_size_mb(Path(__file__).parent / "cache")
+    overall_status = "healthy" if (ollama_reachable and kokoro_reachable) else "degraded"
     
     # Always return 200 OK as long as gen-engine app itself is running
     # External service failures don't make the app unhealthy
     return JSONResponse(
         status_code=200,
         content={
-            "status": "healthy",
+            "status": overall_status,
             "timestamp": datetime.now().isoformat(),
+            "ollama_reachable": ollama_reachable,
+            "kokoro_reachable": kokoro_reachable,
+            "disk_space_gb": disk_space_gb,
+            "cache_size_mb": cache_size_mb,
             "services": services_status,
             "cache": {
                 "entries": len(app_state["cache"]),
@@ -287,8 +314,12 @@ async def metrics():
             content={"error": "Prometheus metrics not available"}
         )
 
-    # Update cache size gauge
-    CACHE_SIZE.set(len(app_state["cache"]))
+    # Update cache size gauge (prefetch cache is the active generation cache).
+    try:
+        with prefetch_manager._lock:  # noqa: SLF001 - intentional lightweight instrumentation
+            CACHE_SIZE.set(len(prefetch_manager._cache))
+    except Exception:
+        CACHE_SIZE.set(len(app_state["cache"]))
 
     return Response(
         generate_latest(),

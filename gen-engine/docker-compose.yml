@@ -9,7 +9,7 @@
 #   - gen-engine: FastAPI server (port 8001)
 #   - ollama: Gemma 4 E2B LLM service (port 11434)
 #   - kokoro-tts: Audio generation service (port 8880)
-#   - postgres: Mastery and session data store (port 5432)
+#   - postgres: Local learner/mastery store (port 5432)
 #   - prometheus: Metrics collection (port 9090)
 #
 # DEPENDENCIES:
@@ -69,20 +69,20 @@ services:
       - "5432:5432"
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-neuroadapt}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-neuroadapt}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-neuroadapt_dev_password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - neuroadapt
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-neuroadapt}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neuroadapt} -d ${POSTGRES_DB:-neuroadapt}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 10
+      start_period: 10s
     logging:
       driver: "local"
       options:
@@ -114,12 +114,13 @@ services:
       - .env  # Use .env for secrets and overrides; see .env.example
     environment:
       - OLLAMA_URL=http://ollama:11434
-      - TTS_URL=http://kokoro-tts:8880
       - KOKORO_TTS_URL=http://kokoro-tts:8880
-      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-neuroadapt}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-neuroadapt}
+      - TTS_URL=http://kokoro-tts:8880
+      - DATABASE_URL=${DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - GENERATION_CACHE_SIZE=${GENERATION_CACHE_SIZE:-500}
+      - CACHE_MAX_SIZE=${CACHE_MAX_SIZE:-500}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
       - PROMETHEUS_ENABLED=${PROMETHEUS_ENABLED:-true}
     healthcheck:
