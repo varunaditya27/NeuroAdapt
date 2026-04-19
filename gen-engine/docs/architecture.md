@@ -106,7 +106,7 @@ graph TD
 |------|---------|---------|-----------------|
 | **Tier 1** | < 1s | Zero AI inference | Not cached — faster to regenerate |
 | **Tier 2** | 2-5s | Single LLM call | Cached per (action_id, slide_content) key |
-| **Tier 3** | 10-45s | Heavy (Manim render, SD, TTS) | Always pre-fetched, never on-demand |
+| **Tier 3** | 10-45s | Heavy (Manim render, SD, TTS) | Prefer prefetch; on-demand generation with timeout fallback on cache miss |
 
 ---
 
@@ -329,6 +329,14 @@ def detect_hyperfocus(state_vector: dict) -> tuple[bool, float]:
     3. Gaze dispersion low (fixations tightly clustered)
     4. Scroll velocity near zero (deep in one section)
     5. Session duration exceeding learner's typical pattern
+
+    Compatibility behavior:
+    - If full signal set is unavailable, use direct `hyperfocus_composite`
+      when provided, else use a legacy proxy blend.
+
+    Hysteresis behavior:
+    - Enter preemption at composite >= 0.75
+    - Exit only after composite < 0.60 remains stable for 30s
     """
     weights = [0.25, 0.20, 0.30, 0.15, 0.10]
     
@@ -350,11 +358,12 @@ def detect_hyperfocus(state_vector: dict) -> tuple[bool, float]:
 ```mermaid
 flowchart TD
     A[Request arrives] --> B{hyperfocus_composite ≥ 0.75?}
-    B -->|Yes| C[Override to action_id = 0]
+    B -->|Yes| C[Enter protected mode]
     B -->|No| D[Proceed to action_router]
-    C --> E[Log: Hyperfocus protection triggered]
+    C --> E[Override to action_id = 0]
     E --> F[Return 204 No Content\nFrontend holds current slide]
-    D --> G[Normal generation flow]
+    F --> G[Remain protected until score < 0.60\nfor a stable 30s window]
+    D --> H[Normal generation flow]
 ```
 
 **Clinical Justification:** Interrupting ADHD hyperfocus is clinically harmful — it breaks a rare state of sustained productive attention and can trigger frustration or shutdown response.

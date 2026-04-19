@@ -233,7 +233,7 @@ The base positive prompt template (from `prompts/image_gen_base.txt`) emphasises
 | Sentence pause | +20% longer | Executive function needs transition time |
 
 **Voice Cloning:** 10-second sample → cloned voice for familiarity.  
-**Fallback chain:** Kokoro TTS (local, free) → ElevenLabs (cloud, premium) → Web Speech API (browser native).
+**Fallback chain:** Kokoro TTS (local, free) → Web Speech API (browser native) → text-only.
 
 ---
 
@@ -420,10 +420,15 @@ Generate content in target format based on action_id.
 
 **Supported action_ids:**
 - `0`: Hold course (no generation, returns 204)
+- `1`: Chunked reading mode (Tier 1)
 - `2`: Text simplification (Tier 2)
 - `3`: Visual/Audio/Video (Tier 3 — routed by content type)
 - `4`: Gamified quiz (Tier 2)
 - `5`: Sensory break (Tier 1 — returns pre-built templates)
+
+**Compatibility notes:**
+- `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
+- `concept_id` is accepted as an alias for `concept`.
 
 ---
 

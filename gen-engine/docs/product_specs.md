@@ -216,21 +216,27 @@ The gen-engine microservice transforms educational content into neurodivergent-o
 **Description:** Detect hyperfocus state and override Orchestrator action to prevent disruption.
 
 **Inputs:**
-- `state_vector` (object): All 9 signals including gaze, keystroke, idle
+- `state_vector` (object): Supports two paths
+  - Documented signal path: `idle_time`, `keystroke_cv`, `gaze_dispersion`, `scroll_velocity`, `session_duration`, `learner_avg_duration`
+  - Compatibility path: direct `hyperfocus_composite` (or legacy proxy blend when direct value is unavailable)
 
 **Outputs:**
 - `is_hyperfocus` (bool): Detection result
 - `confidence` (float): Composite score 0-1
 
 **Processing:**
-1. Compute composite from 5 weighted signals:
+1. If documented inputs are present, compute composite from 5 weighted signals:
    - Idle time < 2s → score 1.0
    - Keystroke CV < 0.3 → score 1.0
    - Gaze dispersion < 0.15 → score 1.0
    - Scroll velocity < 0.05 → score 1.0
    - Session duration > 1.5× learner avg → score 1.0
 2. Weighted average: `composite = Σ(weight_i × score_i)`
-3. If composite ≥ 0.75: Override to action_id = 0
+3. Else use compatibility path (`hyperfocus_composite` if present, otherwise legacy proxy blend)
+4. Apply hysteresis:
+  - Enter protection at composite ≥ 0.75
+  - Exit only after composite < 0.60 is stable for 30 seconds
+5. While protection is active, override to `action_id = 0` and return 204 (no content)
 
 **Non-Functional:**
 - Latency: < 50ms (must not delay request)
@@ -347,6 +353,7 @@ Generate content for confirmed action.
   "learner_level": "grade8",
   "session_id": "uuid-v4",
   "confidence": 0.74,
+  "concept_id": "mitochondria_intro",
   "state_vector": {
     "cognitive_load": 0.82,
     "scroll_velocity": 0.03,
@@ -360,6 +367,10 @@ Generate content for confirmed action.
   }
 }
 ```
+
+Notes:
+- `concept_id` is accepted as an alias for `concept`.
+- For action 3, `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
 
 **Response (200 OK):**
 ```json
@@ -380,8 +391,8 @@ Generate content for confirmed action.
 **Response (204 No Content):**  
 Returned when hyperfocus gate triggers or action_id = 0.
 
-**Response (503 Service Unavailable):**  
-Generator timeout exceeded all fallbacks, or resource exhaustion.
+**Response (500 Internal Server Error):**  
+Returned when orchestration fails before a fallback can be produced.
 
 ---
 
