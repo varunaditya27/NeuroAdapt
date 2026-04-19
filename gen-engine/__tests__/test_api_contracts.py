@@ -88,3 +88,12 @@ def test_health_includes_documented_reachability_and_capacity_fields():
     assert "kokoro_reachable" in payload
     assert "disk_space_gb" in payload
     assert "cache_size_mb" in payload
+    assert "cache" in payload
+    assert "prompts" in payload
+    assert "services" in payload
+    assert isinstance(payload["services"], dict)
+
+    if payload["services"]:
+        first_service = next(iter(payload["services"].values()))
+        assert "status" in first_service
+        assert "checked_seconds_ago" in first_service

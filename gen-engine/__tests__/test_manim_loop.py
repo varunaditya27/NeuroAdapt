@@ -22,6 +22,8 @@ def test_manim_missing_binary_falls_back_to_image(monkeypatch):
     assert result["video_url"] is None
     assert result["image_url"] == "/tmp/fallback.svg"
     assert "warning" in result
+    assert result["generation_mode"] == "manim_fallback_static_image"
+    assert result["fallback_stage"] == "manim_unavailable"
 
 
 def test_manim_cache_hit_returns_existing_mp4(tmp_path, monkeypatch):
@@ -38,6 +40,7 @@ def test_manim_cache_hit_returns_existing_mp4(tmp_path, monkeypatch):
 
     assert result["cache_hit"] is True
     assert result["video_url"] == str(cached)
+    assert result["generation_mode"] == "manim_generated_cache"
 
 
 def test_manim_render_failure_uses_static_fallback(monkeypatch):
@@ -63,3 +66,5 @@ def test_manim_render_failure_uses_static_fallback(monkeypatch):
     assert result["video_url"] is None
     assert result["image_url"] == "/tmp/fallback.svg"
     assert "warning" in result
+    assert result["generation_mode"] == "manim_fallback_static_image"
+    assert result["fallback_stage"] == "manim_retry_exhausted"

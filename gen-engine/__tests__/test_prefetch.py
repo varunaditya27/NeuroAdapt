@@ -41,6 +41,7 @@ def test_prefetch_manager_round_trip():
     request = {
         "session_id": "s1",
         "slide_content": "Newton's first law",
+        "learner_level": "grade8",
         "content_type": "animation",
     }
 
@@ -64,11 +65,13 @@ def test_prefetch_content_type_alias_is_retrievable_with_auto_key():
     prefetch_request = {
         "session_id": "s_alias",
         "slide_content": "Momentum conservation",
+        "learner_level": "grade8",
         "content_type": "stem",
     }
     query_request = {
         "session_id": "s_alias",
         "slide_content": "Momentum conservation",
+        "learner_level": "grade8",
         # no content_type on generate request
     }
 
@@ -95,6 +98,7 @@ def test_clear_session_prevents_stale_result_from_repopulating_cache():
     request = {
         "session_id": "s_clear",
         "slide_content": "Friction and force",
+        "learner_level": "grade8",
         "content_type": "animation",
     }
 
@@ -109,3 +113,32 @@ def test_clear_session_prevents_stale_result_from_repopulating_cache():
     status = manager.get_status(action_id=3, request_data=request)
     assert status["status"] == "missing"
     assert status["cache_hit"] is False
+
+
+def test_prefetch_isolated_by_learner_level():
+    manager = PrefetchManager(max_workers=1, ttl_seconds=60, max_entries=10)
+    manager.set_generator(lambda action_id, request: {"action_id": action_id, "level": request.get("learner_level")})
+
+    grade5_request = {
+        "session_id": "s_level",
+        "slide_content": "Cell respiration overview",
+        "learner_level": "grade5",
+        "content_type": "animation",
+    }
+    queued = manager.start_prefetch([3], grade5_request)
+    assert queued == 1
+
+    value_grade5, hit_grade5 = manager.get_cached_or_wait(action_id=3, request_data=grade5_request, timeout=2)
+    assert hit_grade5 is True
+    assert value_grade5 is not None
+    assert value_grade5.get("level") == "grade5"
+
+    grade8_request = {
+        "session_id": "s_level",
+        "slide_content": "Cell respiration overview",
+        "learner_level": "grade8",
+        "content_type": "animation",
+    }
+    value_grade8, hit_grade8 = manager.get_cached_or_wait(action_id=3, request_data=grade8_request, timeout=0.1)
+    assert hit_grade8 is False
+    assert value_grade8 is None

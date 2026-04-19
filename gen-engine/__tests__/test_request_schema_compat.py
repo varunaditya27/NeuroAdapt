@@ -77,3 +77,21 @@ def test_generate_request_accepts_stem_and_general_content_types():
     assert stem_req.content_type.value == "stem"
     assert general_req.content_type is not None
     assert general_req.content_type.value == "general"
+
+
+def test_generate_request_allows_missing_hyperfocus_composite():
+    state = _state_vector()
+    state.pop("hyperfocus_composite", None)
+
+    req = GenerateRequest.model_validate(
+        {
+            "action_id": 2,
+            "slide_content": "Explain osmosis in simple terms.",
+            "learner_level": "grade8",
+            "session_id": str(uuid4()),
+            "confidence": 0.75,
+            "state_vector": state,
+        }
+    )
+
+    assert req.state_vector.hyperfocus_composite == 0.0
