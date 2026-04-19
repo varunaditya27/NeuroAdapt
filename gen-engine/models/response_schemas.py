@@ -95,6 +95,7 @@ class ContentPayload(BaseModel):
     video_url: Optional[str] = Field(None, description="Generated animation/video URL")
     avatar_video_url: Optional[str] = Field(None, description="Generated avatar video URL")
     duration_ms: Optional[int] = Field(None, ge=0, description="Video duration in milliseconds")
+    render_logs: Optional[str] = Field(None, description="Render diagnostics output for animation generation")
 
     # Audio generation (action_id=3)
     audio_url: Optional[str] = Field(None, description="Generated audio URL")
@@ -121,6 +122,9 @@ class GenerateResponse(BaseModel):
     content: ContentPayload = Field(..., description="Generated content payload")
     generation_time_ms: int = Field(..., ge=0, description="Time taken to generate content")
     cache_hit: bool = Field(..., description="Whether content came from cache")
+    hyperfocus_override: bool = Field(
+        ..., description="Whether generation was bypassed due to hyperfocus protection"
+    )
     error: Optional[str] = Field(None, description="Error message if fallback was applied")
     warning: Optional[str] = Field(None, description="Warning about degraded quality")
     timestamp: str = Field(..., description="Response timestamp (ISO 8601)")

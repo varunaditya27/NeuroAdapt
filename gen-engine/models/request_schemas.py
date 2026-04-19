@@ -102,7 +102,7 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import AliasChoices, BaseModel, Field, field_validator, ConfigDict
 
 
 class LearnerLevel(str, Enum):
@@ -119,6 +119,10 @@ class ContentType(str, Enum):
     ANIMATION = "animation"
     AUDIO = "audio"
     AVATAR = "avatar"
+    STEM = "stem"
+    GENERAL = "general"
+    VISUAL = "visual"
+    VIDEO = "video"
 
 
 class StateVector(BaseModel):
@@ -184,6 +188,53 @@ class StateVector(BaseModel):
         ge=0.0,
         le=1.0,
         description="Bonus for sustained idle periods"
+    )
+
+    # Compatibility fields used by documented hyperfocus detector inputs.
+    idle_time: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Idle time in seconds over recent observation window"
+    )
+    keystroke_cv: float = Field(
+        default=1.0,
+        ge=0.0,
+        description="Coefficient of variation for keystroke cadence"
+    )
+    gaze_dispersion: float = Field(
+        default=1.0,
+        ge=0.0,
+        description="Normalized gaze dispersion (lower means tighter fixation cluster)"
+    )
+    scroll_velocity: float = Field(
+        default=0.0,
+        description="Signed scroll velocity for recent observation window"
+    )
+    session_duration: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Elapsed session duration in seconds"
+    )
+    learner_avg_duration: float = Field(
+        default=1.0,
+        ge=0.0,
+        description="Learner baseline average session duration in seconds"
+    )
+
+    # Additional observer-compatible telemetry fields (optional).
+    keystroke_cadence: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Raw keystroke cadence signal"
+    )
+    response_latency: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Interaction response latency in seconds"
+    )
+    preference_delta: float = Field(
+        default=0.0,
+        description="Preference delta signal from feedback loop"
     )
 
     model_config = ConfigDict(
@@ -276,6 +327,7 @@ class GenerateRequest(BaseModel):
         None,
         min_length=1,
         max_length=200,
+        validation_alias=AliasChoices("concept", "concept_id"),
         description="Explicit concept override (if different from slide_content)"
     )
     content_type: Optional[ContentType] = Field(
@@ -342,6 +394,7 @@ class PrefetchRequest(BaseModel):
         ...,
         min_length=1,
         max_length=3,
+        validation_alias=AliasChoices("top_actions", "action_candidates"),
         description="Action IDs to prefetch (ordered by Q-value)"
     )
     slide_content: str = Field(
@@ -351,8 +404,19 @@ class PrefetchRequest(BaseModel):
         description="Current slide content for prefetch context"
     )
     learner_level: LearnerLevel = Field(
-        ...,
+        default=LearnerLevel.GRADE8,
         description="Learner's current level"
+    )
+    content_type: Optional[ContentType] = Field(
+        None,
+        description="Optional content type hint for action_id=3 prefetch"
+    )
+    concept: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=200,
+        validation_alias=AliasChoices("concept", "concept_id"),
+        description="Optional concept hint used by visual generators"
     )
 
     @field_validator('top_actions')
@@ -365,10 +429,11 @@ class PrefetchRequest(BaseModel):
         return v
 
     model_config = ConfigDict(
+        populate_by_name=True,
         json_schema_extra={
             "example": {
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
-                "top_actions": [3, 4, 2],
+                "action_candidates": [3, 4, 2],
                 "slide_content": "Mitochondria are the powerhouse of the cell...",
                 "learner_level": "grade8"
             }
