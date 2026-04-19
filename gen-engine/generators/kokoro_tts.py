@@ -1,145 +1,159 @@
-"""
-Kokoro TTS — Calm-Preset Audio Generation (Tier 3, 5-20 seconds)
+"""Tier-3 Kokoro TTS generation utilities."""
 
-================================================================================
-PURPOSE:
-    Generate calm, neurodivergent-optimized audio narration.
-    Supports voice cloning from learner samples.
-    Provides per-word timestamps for sync with animations.
+from __future__ import annotations
 
-TIER: 3 (Async, 5-20 seconds)
+import hashlib
+import os
+import wave
+from pathlib import Path
+from typing import Dict, List
 
-DEPENDENCIES:
-    - requests==2.32.3 : HTTP client for TTS API
-    - pydub==0.25.1 : WAV file manipulation
-    - numpy==2.1.0 : Audio processing
-    - Docker : Kokoro TTS service (http://localhost:8880)
+import requests
 
-EXTERNAL SERVICES:
-    - Kokoro TTS Docker (http://localhost:8880) : OpenAI-compatible API
-    - PostgreSQL : Store voice profiles by learner_id
-    - Disk : Store WAV files (~100KB per minute)
+def _resolve_audio_dir() -> Path:
+    preferred = Path(__file__).resolve().parents[1] / "cache" / "audio"
+    try:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    except Exception:
+        fallback = Path(os.getenv("GEN_ENGINE_CACHE_DIR", "/tmp/neuroadapt-gen-engine")) / "audio"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
-INPUT:
-    text: str : Narration to generate audio for
-    voice_profile: str | null : Learner's cloned voice ID (optional)
-    speed: float : Playback speed (default: 0.85x)
-    learner_id: str : UUID for voice profile lookup
-    session_id: str : For logging
 
-OUTPUT:
-    {
-        "audio_url": str,
-        "format": "wav",
-        "sample_rate": 44100,
-        "duration_ms": int,
-        "speed": 0.85,
-        "voice_profile": str,
-        "word_timestamps": [
-            {"word": "The", "start_ms": 0, "end_ms": 180},
-            {"word": "plant", "start_ms": 180, "end_ms": 360},
-            ...
-        ],
-        "generation_time_ms": int
+_AUDIO_DIR = _resolve_audio_dir()
+
+
+def _base_url() -> str:
+    return os.getenv("KOKORO_TTS_URL") or os.getenv("TTS_URL") or "http://localhost:8880"
+
+
+def _cache_key(text: str, voice: str, speed: float) -> str:
+    return hashlib.md5(f"{voice}:{speed}:{text}".encode("utf-8")).hexdigest()
+
+
+def _duration_from_wav(file_path: Path) -> int:
+    try:
+        with wave.open(str(file_path), "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate() or 44100
+            return int((frames / rate) * 1000)
+    except Exception:
+        return 0
+
+
+def _heuristic_word_timestamps(text: str, duration_ms: int) -> List[dict]:
+    words = [w for w in text.split() if w.strip()]
+    if not words:
+        return []
+    step = max(120, int(duration_ms / len(words))) if duration_ms > 0 else 220
+    out = []
+    cursor = 0
+    for word in words:
+        out.append({"word": word, "start_ms": cursor, "end_ms": cursor + step})
+        cursor += step
+    return out
+
+
+def extract_word_timestamps(audio_path: str, text: str | None = None) -> List[dict]:
+    """Use Kokoro alignment endpoint if available, else fall back to heuristic timings."""
+    try:
+        response = requests.get(
+            f"{_base_url()}/v1/audio/timestamps",
+            params={"audio_path": audio_path},
+            timeout=2,
+        )
+        response.raise_for_status()
+        data = response.json()
+        stamps = data.get("timestamps")
+        if isinstance(stamps, list):
+            return stamps
+    except Exception:
+        pass
+
+    duration_ms = _duration_from_wav(Path(audio_path))
+    return _heuristic_word_timestamps(text or "", duration_ms)
+
+
+def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> Dict:
+    """Create a Kokoro voice profile from a short sample."""
+    with open(sample_audio_path, "rb") as sample_file:
+        response = requests.post(
+            f"{_base_url()}/v1/voices/create",
+            files={"audio": sample_file},
+            data={"name": voice_name},
+            timeout=10,
+        )
+    response.raise_for_status()
+    payload = response.json()
+    return {
+        "voice_id": payload.get("voice_id"),
+        "voice_name": voice_name,
     }
 
-CALM PRESET CONFIGURATION:
-    Parameter | Value | Reason
-    ---|---|---
-    Speaking rate | 0.85x default | More processing time
-    Prosody variation | Minimal | No sudden emphasis
-    Pitch range | Narrow | Soothing consistency
-    Background music | None | Zero audio competing stimuli
-    Sentence pause | +20% | Executive function transition time
-    Voice gender | Neutral | Reduces social processing load
-    Voice warmth | High | Reduces anxiety
 
-ALGORITHM:
-    1. Check cache for audio by (text_hash, voice_profile)
-    2. If cache miss:
-        a. Load/fetch voice profile:
-            - If voice_profile provided: Use learner's cloned voice
-            - Else: Use default calm voice (af_bella)
-        b. Call Kokoro TTS API:
-            POST http://localhost:8880/v1/audio/speech
-            {
-                "model": "kokoro",
-                "input": text,
-                "voice": voice_profile,
-                "speed": 0.85,
-                "response_format": "wav"
-            }
-        c. Save WAV to disk
-        d. Extract word-level timestamps
-    3. Return audio URL + timestamps
+def generate_tts(
+    text: str,
+    voice_profile: str | None = None,
+    speed: float = 0.85,
+    learner_id: str | None = None,
+    session_id: str | None = None,
+) -> Dict:
+    """Generate TTS with calm defaults and robust fallbacks."""
+    if not text.strip():
+        return {"audio_url": None, "word_timestamps": [], "warning": "No text provided for TTS."}
 
-VOICE CLONING:
-    Initial setup (one-time per learner):
-        - Collect 10-15 second audio sample from educator/parent
-        - Send to Kokoro:
-            POST http://localhost:8880/v1/voices/create
-            Form: {"audio": <file>, "name": "educator_calm"}
-        - Kokoro returns: {"voice_id": "voice_xyz"}
-        - Store voice_id in PostgreSQL (learner_voice_profiles table)
-    
-    Usage in TTS:
-        - Future calls use voice_id instead of default
-        - Familiarity reduces cognitive load
+    voice = voice_profile or os.getenv("KOKORO_DEFAULT_VOICE", "af_bella")
+    speed_value = max(0.7, min(1.2, float(speed)))
 
-WORD TIMESTAMPS (for animation sync):
-    - Kokoro provides per-word timing alignment
-    - Used to sync text reveal, animation, or lip-sync with audio
-    - Format: {"word": "photosynthesis", "start_ms": 1200, "end_ms": 1800}
+    key = _cache_key(text, voice, speed_value)
+    wav_path = _AUDIO_DIR / f"{key}.wav"
 
-KEY FUNCTIONS:
-    - generate_tts(text, voice_profile, speed, learner_id) → dict
-    - cache_lookup_audio(text_hash, voice_profile) → str | null
-    - call_kokoro_api(text, voice_profile, speed) → bytes
-    - extract_word_timestamps(wav_path) → list[dict]
-    - clone_voice_from_sample(audio_sample_path, learner_id) → str
-    - get_learner_voice_profile(learner_id) → str | null
+    if wav_path.exists():
+        duration_ms = _duration_from_wav(wav_path)
+        timestamps = _heuristic_word_timestamps(text, duration_ms)
+        return {
+            "audio_url": str(wav_path),
+            "duration_ms": duration_ms,
+            "word_timestamps": timestamps,
+            "voice_profile": voice,
+            "cache_hit": True,
+        }
 
-ERROR HANDLING:
-    - Kokoro timeout (>3s): Serve text-only, no audio
-    - Voice profile not found: Use default calm voice
-    - Audio file corrupted: Retry once, then fallback
-    - Disk full: Delete oldest cached audio files
+    payload = {
+        "model": "kokoro",
+        "input": text,
+        "voice": voice,
+        "speed": speed_value,
+        "response_format": "wav",
+    }
 
-CONSTRAINTS:
-    - Max text length: 500 words (pre-split if longer)
-    - Speed range: 0.7x to 1.2x
-    - Hard timeout: 3 seconds (5s with retry)
-    - Sample rate: 44.1kHz (standard)
-    - Format: WAV (lossless)
+    try:
+        response = requests.post(
+            f"{_base_url()}/v1/audio/speech",
+            json=payload,
+            timeout=float(os.getenv("LATENCY_BUDGET_AUDIO", "3")),
+        )
+        response.raise_for_status()
+        wav_path.write_bytes(response.content)
 
-CACHE STRATEGY:
-    - Key: MD5(text) + voice_profile + speed
-    - TTL: 30 days
-    - Size limit: 5GB total disk
-    - LRU eviction when full
+        duration_ms = _duration_from_wav(wav_path)
+        timestamps = extract_word_timestamps(str(wav_path), text=text)
 
-INTEGRATION:
-    - Called by action_router when action_id = 3 + content_type="audio"
-    - Results cached by (text_hash, voice_profile)
-    - Audio served via frontend <audio> tag
-    - Timestamps used for lip-sync with liveportrait_avatar
-    - Word-level timing used for text reveal animation
-
-RELATED:
-    - liveportrait_avatar consumes audio_url + word_timestamps
-    - manim_gen may request separate narration audio
-    - chunk_renderer uses timestamps for progressive text reveal
-
-================================================================================
-"""
-
-# TODO: Implement generate_tts() main function
-# TODO: Load/fetch voice profile for learner
-# TODO: Call Kokoro TTS API
-# TODO: Extract word-level timestamps
-# TODO: Implement voice cloning from sample
-# TODO: Store voice profile in PostgreSQL
-# TODO: Implement audio caching
-# TODO: Handle audio file I/O
-# TODO: Add error handling with text-only fallback
-# TODO: Add metrics and logging
+        return {
+            "audio_url": str(wav_path),
+            "duration_ms": duration_ms,
+            "word_timestamps": timestamps,
+            "voice_profile": voice,
+            "cache_hit": False,
+            "learner_id": learner_id,
+            "session_id": session_id,
+        }
+    except Exception as exc:
+        return {
+            "audio_url": None,
+            "duration_ms": 0,
+            "word_timestamps": [],
+            "voice_profile": voice,
+            "warning": f"Kokoro unavailable; served text-only fallback ({exc}).",
+        }

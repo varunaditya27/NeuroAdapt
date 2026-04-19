@@ -1,204 +1,215 @@
-"""
-Quiz Injector — Gamified Task Generator (Tier 2, 2-5 seconds)
-
-================================================================================
-PURPOSE:
-    Generate 3 mastery-scaled multiple-choice questions.
-    Difficulty based on learner's demonstrated mastery (from Postgres).
-    Uses hybrid approach: template + LLM validation.
-
-TIER: 2 (Fast, 2-5 seconds)
-
-DEPENDENCIES:
-    - ollama==0.4.1 : Validate MCQ quality
-    - psycopg2 : Query learner mastery_score from Postgres
-    - prompts/quiz_template.txt : MCQ generation template
-    - tenacity : Retry logic for LLM validation
-
-EXTERNAL SERVICES:
-    - PostgreSQL : Query mastery_score for concept
-    - Ollama : Validate MCQ quality
-    - Redis (optional) : Cache generated quizzes
-
-INPUT:
-    concept: str : What the quiz tests (e.g., "Photosynthesis")
-    learner_id: str : UUID to look up mastery
-    slide_content: str : Context for distractors
-    session_id: str : For logging
-
-MASTERY LEVELS (from Postgres):
-    - < 0.4 : Struggling (recall, 3 very easy questions)
-    - 0.4-0.7 : Developing (application, 3 moderate questions)
-    - > 0.7 : Confident (transfer, 3 challenging questions)
-
-OUTPUT:
-    {
-        "quiz_id": str,
-        "questions": [
-            {
-                "id": int,
-                "text": str,
-                "options": [str, str, str, str],
-                "correct_index": int,
-                "difficulty": "easy" | "moderate" | "hard"
-            },
-            ...
-        ],
-        "mastery_level": "struggling" | "developing" | "confident",
-        "estimated_time_seconds": int,
-        "encouragement_text": str,
-        "generation_time_ms": int
-    }
-
-ALGORITHM:
-    1. Query Postgres for learner's mastery_score on concept
-    2. Determine difficulty tier:
-        a. < 0.4 → 3 recall questions (multiple choice, 4 options)
-        b. 0.4-0.7 → 3 partial application (4-5 options, some ambiguity)
-        c. > 0.7 → 3 novel application (distractors from related concepts)
-    3. Use template + prompt to generate MCQs
-    4. Validate via Gemma 4:
-        - Correct answer is factually correct
-        - Distractors are plausible but wrong
-        - Question matches difficulty level
-    5. Retry if validation fails (max 2 retries)
-    6. Add encouragement text based on mastery
-
-QUESTION BANK STRATEGY:
-    - Store pre-authored question templates by concept
-    - Use LLM to parametrize and validate
-    - Avoid duplicate questions (check cache)
-
-ANSWER TRACKING:
-    - Record learner response immediately (PostgreSQL)
-    - Update mastery_score after correct answer
-    - Log for learning curve analysis
-
-KEY FUNCTIONS:
-    - generate_quiz(concept, learner_id, slide_content) → dict
-    - query_mastery_score(learner_id, concept) → float
-    - determine_difficulty_tier(mastery_score) → str
-    - generate_mcq_by_template(concept, difficulty) → list[dict]
-    - validate_mcq_with_llm(question) → bool
-    - add_encouragement_text(mastery_level) → str
-
-ERROR HANDLING:
-    - Mastery lookup failure: Assume mastery=0.5 (moderate)
-    - LLM validation timeout: Skip validation (serve as-is with warning)
-    - Template load failure: Use hardcoded fallback questions
-
-CONSTRAINTS:
-    - 3 questions per quiz (fixed)
-    - 4-5 answer options per question
-    - Hard timeout: 5 seconds
-    - Max retries: 2
-
-INTEGRATION:
-    - Called by action_router when action_id = 4
-    - Responses stored in PostgreSQL learner_responses table
-    - Mastery scores updated by backend scoring engine
-    - Quiz answers logged for learning analytics
-
-RELATED:
-    - mastery_score updated by backend evaluation
-    - Questions reused if similar concepts presented
-================================================================================
-"""
+"""Tier-2 quiz injector with mastery-aware difficulty."""
 
 from __future__ import annotations
 
 import os
-import time
-import uuid
-from typing import Any, Dict, List, Optional
+import re
+from typing import Dict, List
 
 try:
-    import psycopg2
-except ImportError:  # pragma: no cover
+    import psycopg2  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
     psycopg2 = None
 
+_STOPWORDS = {
+    "the",
+    "and",
+    "that",
+    "this",
+    "with",
+    "from",
+    "for",
+    "have",
+    "into",
+    "your",
+    "their",
+    "about",
+    "when",
+    "where",
+    "which",
+    "while",
+}
 
-POSTGRES_URL = os.getenv(
-    "POSTGRES_URL",
-    os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neuroadapt"),
-)
+
+def _db_url() -> str | None:
+    return os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
 
 
-def query_mastery_score(learner_id: Optional[str], concept: str, default_score: float = 0.5) -> float:
-    """Fetch mastery score from Postgres with graceful fallback."""
-    if not learner_id or not concept or psycopg2 is None:
-        return default_score
+def query_mastery_score(session_id: str, concept_key: str) -> float:
+    """Lookup mastery score from local Postgres; return neutral default on failures."""
+    if psycopg2 is None:
+        return 0.5
+
+    db_url = _db_url()
+    if not db_url:
+        return 0.5
 
     try:
-        with psycopg2.connect(POSTGRES_URL, connect_timeout=2) as conn:
+        with psycopg2.connect(db_url, connect_timeout=2) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT mastery_score
-                    FROM learner_mastery_scores
-                    WHERE learner_id = %s AND concept = %s
+                    FROM learner_concept_mastery
+                    WHERE session_id = %s AND concept_key = %s
+                    ORDER BY updated_at DESC
                     LIMIT 1
                     """,
-                    (learner_id, concept),
+                    (session_id, concept_key),
                 )
                 row = cur.fetchone()
-                if row is None:
-                    return default_score
-                return max(0.0, min(1.0, float(row[0])))
+                if row and row[0] is not None:
+                    return max(0.0, min(1.0, float(row[0])))
     except Exception:
-        return default_score
+        return 0.5
+
+    return 0.5
 
 
 def determine_difficulty_tier(mastery_score: float) -> str:
     if mastery_score < 0.4:
-        return "easy"
-    if mastery_score <= 0.7:
-        return "moderate"
-    return "hard"
+        return "struggling"
+    if mastery_score < 0.7:
+        return "developing"
+    return "confident"
 
 
-def _generate_questions(concept: str, difficulty: str) -> List[Dict[str, Any]]:
-    concept_label = concept or "current concept"
-    stem_by_difficulty = {
-        "easy": "recall",
-        "moderate": "application",
-        "hard": "transfer",
-    }
-    stem = stem_by_difficulty[difficulty]
+def _extract_terms(text: str, limit: int = 8) -> List[str]:
+    words = re.findall(r"[A-Za-z][A-Za-z\-]{3,}", text.lower())
+    uniq: List[str] = []
+    for w in words:
+        if w in _STOPWORDS:
+            continue
+        if w not in uniq:
+            uniq.append(w)
+        if len(uniq) >= limit:
+            break
+    return uniq
 
+
+def _encouragement_for(tier: str) -> str:
+    if tier == "struggling":
+        return "Nice effort—focus on the key idea first, then build from there."
+    if tier == "developing":
+        return "Great progress—you're connecting concepts well."
+    return "Awesome—you're ready for transfer-level questions."
+
+
+def _question_set(concept_key: str, terms: List[str], tier: str) -> List[dict]:
+    fallback_terms = terms + ["process", "system", "energy", "model"]
+    t1, t2, t3 = fallback_terms[0], fallback_terms[1], fallback_terms[2]
+
+    if tier == "struggling":
+        difficulty = "easy"
+        return [
+            {
+                "id": 1,
+                "text": f"Which term is most central to this lesson?",
+                "options": [concept_key, t1, t2, t3],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+            {
+                "id": 2,
+                "text": f"What is the safest summary of {concept_key}?",
+                "options": [
+                    f"It is a core idea in this slide.",
+                    "It is unrelated trivia.",
+                    "It is always false.",
+                    "It replaces every concept.",
+                ],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+            {
+                "id": 3,
+                "text": "What should you do first when reviewing this topic?",
+                "options": [
+                    "Identify the main concept and one example.",
+                    "Memorize all details at once.",
+                    "Skip definitions entirely.",
+                    "Ignore context and only read formulas.",
+                ],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+        ]
+
+    if tier == "developing":
+        difficulty = "medium"
+        return [
+            {
+                "id": 1,
+                "text": f"Which statement best applies {concept_key} in context?",
+                "options": [
+                    f"Use {concept_key} to explain how parts relate.",
+                    "Use random facts with no relation.",
+                    "Assume the opposite without evidence.",
+                    "Avoid examples entirely.",
+                ],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+            {
+                "id": 2,
+                "text": "Which is the strongest learning strategy here?",
+                "options": [
+                    "Connect each key term to one concrete example.",
+                    "Read quickly and skip reflection.",
+                    "Only memorize headings.",
+                    "Ignore uncertain points.",
+                ],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+            {
+                "id": 3,
+                "text": f"If {t1} changes, what should you do next?",
+                "options": [
+                    "Re-evaluate related concepts before concluding.",
+                    "Assume nothing else is affected.",
+                    "Delete all previous notes.",
+                    "Ignore the change entirely.",
+                ],
+                "correct_index": 0,
+                "difficulty": difficulty,
+            },
+        ]
+
+    difficulty = "hard"
     return [
         {
             "id": 1,
-            "text": f"({stem.title()}) Which statement best matches {concept_label}?",
+            "text": f"Which transfer use-case best demonstrates deep understanding of {concept_key}?",
             "options": [
-                f"A core principle of {concept_label}",
-                "An unrelated historical fact",
-                "A random numerical value",
-                "A grammar rule",
+                "Applying the idea to a new domain with justified mapping.",
+                "Repeating one definition verbatim.",
+                "Listing terms without relationships.",
+                "Choosing an answer by guesswork.",
             ],
             "correct_index": 0,
             "difficulty": difficulty,
         },
         {
             "id": 2,
-            "text": f"({stem.title()}) What happens first when applying {concept_label}?",
+            "text": "Which response reflects critical evaluation?",
             "options": [
-                "Identify the input conditions",
-                "Skip directly to final output",
-                "Ignore constraints entirely",
-                "Replace all variables with constants",
+                "Compare assumptions, evidence, and outcomes.",
+                "Accept the first explanation blindly.",
+                "Dismiss all alternative views.",
+                "Treat every claim as equally strong.",
             ],
             "correct_index": 0,
             "difficulty": difficulty,
         },
         {
             "id": 3,
-            "text": f"({stem.title()}) Which option is the best reason to use {concept_label}?",
+            "text": f"How should {t2} and {t3} be handled in a complex scenario?",
             "options": [
-                "To improve understanding and decision quality",
-                "To avoid learning fundamentals",
-                "To remove all uncertainty instantly",
-                "To make outcomes random",
+                "Model their interaction before final conclusions.",
+                "Treat them as unrelated by default.",
+                "Ignore constraints and edge cases.",
+                "Use only one variable and discard context.",
             ],
             "correct_index": 0,
             "difficulty": difficulty,
@@ -206,33 +217,25 @@ def _generate_questions(concept: str, difficulty: str) -> List[Dict[str, Any]]:
     ]
 
 
-def _encouragement_text(difficulty: str) -> str:
-    if difficulty == "easy":
-        return "Great start—let's build confidence step by step."
-    if difficulty == "moderate":
-        return "Nice progress—you're connecting ideas well."
-    return "Excellent work—you're ready for challenging transfer questions."
-
-
 def generate_quiz(
-    concept: str,
-    learner_id: Optional[str],
     slide_content: str,
-    session_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Generate a 3-question mastery-scaled quiz payload."""
-    started = time.time()
-    mastery_score = query_mastery_score(learner_id=learner_id, concept=concept or "")
-    difficulty = determine_difficulty_tier(mastery_score)
-    questions = _generate_questions(concept, difficulty)
+    session_id: str,
+    concept: str | None = None,
+    learner_id: str | None = None,
+) -> Dict:
+    """Generate 3 MCQs with difficulty scaled by concept mastery."""
+    terms = _extract_terms(slide_content)
+    concept_key = (concept or (terms[0] if terms else "core concept")).lower()
+
+    mastery_score = query_mastery_score(session_id=session_id, concept_key=concept_key)
+    tier = determine_difficulty_tier(mastery_score)
+    questions = _question_set(concept_key, terms, tier)
 
     return {
-        "quiz_id": str(uuid.uuid4()),
-        "questions": questions,
         "quiz_json": questions,
-        "mastery_level": difficulty,
-        "estimated_time_seconds": 90 if difficulty == "easy" else 120 if difficulty == "moderate" else 150,
-        "encouragement_text": _encouragement_text(difficulty),
-        "generation_time_ms": int((time.time() - started) * 1000),
-        "cache_hit": False,
+        "mastery_level": tier,
+        "estimated_time_seconds": 90,
+        "encouragement_text": _encouragement_for(tier),
+        "mastery_score": mastery_score,
+        "learner_id": learner_id,
     }
