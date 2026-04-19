@@ -1,374 +1,364 @@
-"""
-Action Router — Tier Classification & Dispatch Logic
-
-================================================================================
-PURPOSE:
-    Routes incoming requests to appropriate generator(s) based on action_id.
-    Classifies generators into Tier 1 (instant), Tier 2 (fast), Tier 3 (async).
-    Applies latency budgets and fallback chains.
-
-DEPENDENCIES:
-    - generators.* : All generator modules
-    - orchestration.latency_budget : Enforce timeouts
-    - orchestration.hyperfocus_gate : Pre-emption check
-    - orchestration.prefetch_manager : Async generation
-    - pydantic : Request/response validation
-
-INPUT:
-    action_id: int (0-5)
-    slide_content: str
-    learner_level: "grade5" | "grade8" | "university"
-    confidence: float (0.0-1.0)
-    state_vector: dict
-    session_id: str
-
-ROUTING LOGIC:
-    action_id = 0 (Hold Course)
-        → No generation, return 204 No Content
-        
-    action_id = 2 (Text Simplification)
-        → Tier 2: text_simplify.py
-        → Fallback: Serve original text + warning
-        
-    action_id = 3 (Visual/Audio/Video)
-        → Route by content_type parameter:
-           - type="image" → Tier 3: image_gen.py
-           - type="animation" → Tier 3: manim_gen.py
-           - type="audio" → Tier 3: kokoro_tts.py
-           - type="avatar" → Tier 3: liveportrait_avatar.py
-        → Async pre-fetch manager
-        → Fallback chains: animation→image, audio→text, avatar→audio
-        
-    action_id = 4 (Gamified Quiz)
-        → Tier 2: quiz_injector.py
-        → Fallback: Serve hardcoded quiz
-        
-    action_id = 5 (Sensory Break)
-        → Tier 1: Return pre-built templates (no generation)
-        → No fallback needed (instant)
-
-TIER ARCHITECTURE:
-    Tier 1 (Instant, <1s):
-        - typography_morpher
-        - chunk_renderer
-        - action_id = 5 (templates)
-        → Always served immediately
-        
-    Tier 2 (Fast, 2-5s):
-        - text_simplify
-        - quiz_injector
-        - analogy_engine
-        → Served with latency budget enforcement
-        → Fallback to original/template
-        
-    Tier 3 (Async, 10-45s):
-        - image_gen
-        - manim_gen
-        - kokoro_tts
-        - liveportrait_avatar
-        → Pre-fetched in background
-        → Served from cache if ready
-
-ALGORITHM:
-    1. Validate request (Pydantic)
-    2. Check hyperfocus gate:
-        if hyperfocus_composite > 0.75:
-            → Override action_id to 0 (hold course)
-            → Return without generation
-    3. Apply latency budget decorator
-    4. Route by action_id:
-        a. Call appropriate generator
-        b. Call typography_morpher (all)
-        c. Call chunk_renderer if text (all)
-    5. Catch timeout → Apply fallback chain
-    6. Catch error → Apply fallback chain
-    7. Return response + metrics
-
-FALLBACK CHAINS:
-    action_id = 2 (Text Simplify):
-        Success → Return simplified text
-        Timeout → Serve original text + warning
-        Error → Serve original text + warning
-        
-    action_id = 3 (Visual/Audio/Video):
-        animation → Success: MP4 | Timeout/Error: static image
-        image → Success: PNG | Timeout/Error: text only
-        audio → Success: WAV | Timeout/Error: text only
-        avatar → Success: MP4 | Timeout/Error: audio only
-        
-    action_id = 4 (Quiz):
-        Success → Return MCQs
-        Timeout → Return hardcoded quiz
-        Error → Return hardcoded quiz
-
-PRE-FETCH MANAGER INTEGRATION:
-    - Tier 3 requests sent to prefetch_manager
-    - Manager runs background tasks
-    - Frontend polls /api/generate?action_id=X to check status
-    - Cache hit served immediately on status check
-
-KEY FUNCTIONS:
-    - route_and_generate(request: GenerateRequest) → GenerateResponse
-    - classify_tier(action_id) → str ("tier1" | "tier2" | "tier3")
-    - apply_fallback(action_id, error_type) → dict
-    - apply_all_generators(content, state_vector) → dict
-    - check_action_valid(action_id) → bool
-
-ERROR HANDLING:
-    - Invalid action_id: Return 400 Bad Request
-    - All fallbacks exhausted: Return original content + error
-    - Unexpected exception: Log + return 500 + error message
-
-METRICS:
-    - Count by action_id
-    - Latency histogram by tier
-    - Fallback rate by action_id
-    - Error rate by type
-
-INTEGRATION:
-    - Called by routers/generate.py
-    - Routes to all generators
-    - Returns final GenerateResponse
-
-RELATED:
-    - latency_budget : Enforces timeouts
-    - hyperfocus_gate : Pre-emption override
-    - prefetch_manager : Async generation
-    - All generators : Actual content production
-
-================================================================================
-"""
-
-# TODO: Define action_id routing logic
-# TODO: Implement tier classification
-# TODO: Implement routing by action_id
-# TODO: Implement routing by content_type for action_id=3
-# TODO: Implement hyperfocus gate check
-# TODO: Implement fallback chains
-# TODO: Call typography_morpher for all
-# TODO: Call chunk_renderer for text responses
-# TODO: Add latency budget decorator
-# TODO: Add error handling
-# TODO: Add metrics recording
+"""Action routing and generation orchestration."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import os
+from typing import Any, Dict
 
 from generators.analogy_engine import generate_analogies
 from generators.chunk_renderer import chunk_text
+from generators.image_gen import generate_image
+from generators.kokoro_tts import generate_tts
+from generators.liveportrait_avatar import generate_avatar_video
+from generators.manim_gen import generate_manim_animation
 from generators.quiz_injector import generate_quiz
 from generators.text_simplify import simplify_text
 from generators.typography_morpher import morph_typography
-from models.request_schemas import GenerateRequest
-from orchestration.hyperfocus_gate import should_pre_empt
-from orchestration.latency_budget import execute_with_timeout
+from models.request_schemas import GenerateRequest, PrefetchRequest
+from orchestration.hyperfocus_gate import check_hyperfocus
+from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_with_timeout
+from orchestration.prefetch_manager import prefetch_manager
+
+_LAST_CSS_BY_SESSION: Dict[str, Dict[str, str]] = {}
+
+_CONTENT_TYPE_NORMALIZATION = {
+    "animation": "animation",
+    "video": "animation",
+    "manim": "animation",
+    "stem": "animation",
+    "math": "animation",
+    "physics": "animation",
+    "algorithm": "animation",
+    "process": "animation",
+    "image": "image",
+    "visual": "image",
+    "illustration": "image",
+    "graphic": "image",
+    "general": "image",
+    "audio": "audio",
+    "tts": "audio",
+    "speech": "audio",
+    "avatar": "avatar",
+    "liveportrait": "avatar",
+    "video_avatar": "avatar",
+    "auto": "auto",
+}
 
 
-def classify_tier(action_id: int, content_type: Optional[str] = None) -> str:
-    if action_id in {0, 1, 5}:
+def classify_tier(action_id: int) -> str:
+    if action_id in {1, 5}:
         return "tier1"
     if action_id in {2, 4}:
         return "tier2"
-    if action_id == 3:
-        if content_type in {"animation", "image", "audio", "avatar"}:
-            return "tier3"
-        return "tier2"
-    return "tier1"
+    return "tier3"
 
 
-def check_action_valid(action_id: int) -> bool:
-    return action_id in {0, 1, 2, 3, 4, 5}
+def _is_stem_content(text: str) -> bool:
+    low = text.lower()
+    markers = ["equation", "vector", "force", "algorithm", "physics", "math", "graph", "derivative"]
+    return any(marker in low for marker in markers)
 
 
-def _merge_messages(*messages: Optional[str]) -> Optional[str]:
-    parts = [message.strip() for message in messages if message and message.strip()]
-    if not parts:
-        return None
-    deduped = []
-    for item in parts:
-        if item not in deduped:
-            deduped.append(item)
-    return " | ".join(deduped)
+def _resolved_content_type(request_data: dict) -> str:
+    content_type = request_data.get("content_type")
+    if content_type is not None:
+        normalized = _CONTENT_TYPE_NORMALIZATION.get(str(content_type).strip().lower())
+        if normalized and normalized != "auto":
+            return normalized
+
+    slide = str(request_data.get("slide_content", ""))
+    if _is_stem_content(slide):
+        return "animation"
+    return "image"
 
 
-def _state_dict(request: GenerateRequest) -> Dict[str, Any]:
-    return request.state_vector.model_dump() if request.state_vector is not None else {}
+def _safe_session_id(request_data: dict) -> str:
+    return str(request_data.get("session_id", "unknown"))
 
 
-def _base_content_with_css(request: GenerateRequest) -> Dict[str, Any]:
-    css_variables = morph_typography(_state_dict(request))
-    return {"css_variables": css_variables}
+def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
+    slide_content = str(request_data.get("slide_content", ""))
+    learner_level = str(request_data.get("learner_level", "grade8"))
+    session_id = _safe_session_id(request_data)
+    concept = str(request_data.get("concept") or "").strip() or slide_content[:80]
+    state_vector = request_data.get("state_vector") or {}
 
-
-async def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
-    """Route request to generators and return contract-shaped content payload data."""
-    if not check_action_valid(request.action_id):
-        raise ValueError(f"Invalid action_id: {request.action_id}")
-
-    session_id = str(request.session_id)
-    state = _state_dict(request)
-
-    # Hyperfocus protective override: no intervention.
-    if should_pre_empt(session_id=session_id, state_vector=state):
+    if action_id == 1:
+        chunked = chunk_text(slide_content, chunk_strategy="sentence")
         return {
-            "action_id": 0,
-            "tier": "tier1",
-            "content": None,
-            "cache_hit": False,
-            "warning": "Hyperfocus protection active; interventions paused.",
-            "error": None,
-            "generation_latency_ms": 0,
+            "simplified_text": slide_content,
+            "chunks": chunked.get("chunks", []),
+            "encouragement_text": "Take it one chunk at a time—you've got this.",
         }
 
-    action_id = request.action_id
-    content: Dict[str, Any] = _base_content_with_css(request)
-    cache_hit = False
-    error = None
-    warning = None
-    total_latency_ms = 0
+    if action_id == 2:
+        timeout = get_timeout_seconds("text_simplify")
+        result, timed_out, _, error = run_with_timeout(
+            simplify_text,
+            timeout,
+            slide_content,
+            learner_level,
+            session_id,
+        )
 
-    if action_id == 0:
+        if timed_out:
+            payload = fallback_for("text_simplify", original_text=slide_content)
+            payload.update(
+                {
+                    "fk_grade": None,
+                    "original_fk": None,
+                    "chunks": chunk_text(slide_content, chunk_strategy="sentence").get("chunks", []),
+                }
+            )
+            return payload
+
+        if error:
+            payload = fallback_for("text_simplify", original_text=slide_content)
+            payload["warning"] = f"Text simplification failed: {error}"
+            payload["chunks"] = chunk_text(slide_content, chunk_strategy="sentence").get("chunks", [])
+            return payload
+
+        if state_vector.get("cognitive_load", 0.0) >= 0.82 or state_vector.get("regression_count", 0) >= 6:
+            a_result, a_timed_out, _, _ = run_with_timeout(
+                generate_analogies,
+                get_timeout_seconds("analogy"),
+                concept,
+                slide_content,
+                learner_level,
+            )
+            if not a_timed_out and a_result:
+                result["analogies"] = a_result.get("analogies")
+
+        return result
+
+    if action_id == 3:
+        content_type = _resolved_content_type(request_data)
+
+        if content_type == "audio":
+            res, timed_out, _, error = run_with_timeout(
+                generate_tts,
+                get_timeout_seconds("audio"),
+                slide_content,
+                request_data.get("voice_profile"),
+                0.85,
+                request_data.get("learner_id"),
+                session_id,
+            )
+            if timed_out:
+                return fallback_for("audio", original_text=slide_content)
+            if error:
+                return {"warning": f"Audio generation failed: {error}"}
+            return res
+
+        if content_type == "avatar":
+            tts_res, tts_timed_out, _, _ = run_with_timeout(
+                generate_tts,
+                get_timeout_seconds("audio"),
+                slide_content,
+                request_data.get("voice_profile"),
+                0.85,
+                request_data.get("learner_id"),
+                session_id,
+            )
+            if tts_timed_out or not tts_res.get("audio_url"):
+                return fallback_for("avatar", original_text=slide_content)
+
+            source_image = request_data.get("source_image")
+            if not source_image:
+                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                source_image = image_res.get("image_url")
+
+            avatar_res, avatar_timed_out, _, avatar_error = run_with_timeout(
+                generate_avatar_video,
+                get_timeout_seconds("avatar"),
+                str(source_image),
+                str(tts_res.get("audio_url")),
+                tts_res.get("word_timestamps") or [],
+                request_data.get("learner_id"),
+            )
+
+            merged = {**tts_res, **(avatar_res or {})}
+            if avatar_timed_out:
+                merged.update(fallback_for("avatar"))
+            if avatar_error:
+                merged["warning"] = f"Avatar generation failed: {avatar_error}"
+            return merged
+
+        if content_type == "animation":
+            anim_res, timed_out, _, error = run_with_timeout(
+                generate_manim_animation,
+                get_timeout_seconds("manim"),
+                concept,
+                slide_content,
+                learner_level,
+                session_id,
+            )
+
+            if timed_out:
+                # Cascading fallback: static image + optional audio
+                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
+                return {**image_res, **audio_res, **fallback_for("manim")}
+
+            if error:
+                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                return {**image_res, "warning": f"Animation failed: {error}"}
+
+            if anim_res.get("video_url"):
+                audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
+                return {**anim_res, **audio_res}
+
+            # animation function already returned fallback details
+            return anim_res
+
+        # default visual path (image)
+        image_res, timed_out, _, error = run_with_timeout(
+            generate_image,
+            get_timeout_seconds("image"),
+            concept,
+            slide_content,
+            learner_level,
+            session_id,
+        )
+        if timed_out:
+            return fallback_for("image", original_text=slide_content)
+        if error:
+            return {"warning": f"Image generation failed: {error}"}
+
+        audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
+        return {**image_res, **audio_res}
+
+    if action_id == 4:
+        quiz_res, timed_out, _, error = run_with_timeout(
+            generate_quiz,
+            get_timeout_seconds("quiz"),
+            slide_content,
+            session_id,
+            request_data.get("concept"),
+            request_data.get("learner_id"),
+        )
+        if timed_out:
+            return fallback_for("quiz", original_text=slide_content)
+        if error:
+            payload = fallback_for("quiz", original_text=slide_content)
+            payload["warning"] = f"Quiz generation failed: {error}"
+            return payload
+        return quiz_res
+
+    if action_id == 5:
+        return {
+            "title": "Sensory Reset",
+            "break_template": (
+                "Pause. Breathe in for 4, hold for 4, out for 6. "
+                "Roll shoulders, drink water, then continue when ready."
+            ),
+            "suggested_duration_seconds": 90,
+            "encouragement_text": "Reset complete—ready when you are.",
+        }
+
+    return {
+        "simplified_text": slide_content,
+        "warning": f"Unsupported action_id={action_id}; served original content.",
+    }
+
+
+def _prefetch_generator(action_id: int, request_data: dict) -> dict:
+    return _generate_payload_for_action(action_id, request_data)
+
+
+prefetch_manager.set_generator(_prefetch_generator)
+
+
+def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
+    """Main request router called by API endpoint."""
+    request_data = request.model_dump(mode="json")
+    session_id = str(request.session_id)
+    state_vector = request.state_vector.model_dump(mode="json", exclude_defaults=True)
+
+    should_preempt, composite, _ = check_hyperfocus(session_id=session_id, state_vector=state_vector)
+    if should_preempt or request.action_id == 0:
         return {
             "action_id": 0,
-            "tier": "tier1",
-            "content": None,
+            "content": {},
             "cache_hit": False,
             "warning": None,
             "error": None,
-            "generation_latency_ms": 0,
+            "hyperfocus_override": should_preempt,
+            "hyperfocus_composite": composite,
+            "no_content": True,
         }
 
-    if action_id == 1:
-        chunk_payload = chunk_text(request.slide_content, chunk_strategy="sentence")
-        content.update(
-            {
-                "simplified_text": request.slide_content,
-                "chunks": chunk_payload.get("chunks", []),
-            }
-        )
-        warning = "Action 1 routed as lightweight nudge with chunked text payload."
+    prefetch_wait_seconds = max(0.0, float(os.getenv("PREFETCH_WAIT_SECONDS", "0.8")))
+    cached, cache_hit = prefetch_manager.get_cached_or_wait(
+        request.action_id,
+        request_data,
+        timeout=prefetch_wait_seconds,
+    )
+    if cache_hit and cached is not None:
+        payload = dict(cached)
+    else:
+        payload = _generate_payload_for_action(request.action_id, request_data)
+        cache_hit = bool(payload.get("cache_hit", False))
 
-    elif action_id == 2:
-        fallback = {
-            "simplified_text": request.slide_content,
-            "fk_grade": None,
-            "original_fk": None,
-            "chunks": chunk_text(request.slide_content).get("chunks", []),
-            "cache_hit": False,
-            "warning": "Served original text fallback.",
-        }
-        simplify_result, simplify_error, simplify_warning, latency_ms = await execute_with_timeout(
-            simplify_text,
-            request.slide_content,
-            action_id=2,
-            timeout_seconds=None,
-            fallback_value=fallback,
-            target_level=request.learner_level.value,
-            session_id=session_id,
-        )
-        total_latency_ms += latency_ms
-        cache_hit = bool(simplify_result.get("cache_hit", False))
-        content.update(
-            {
-                "simplified_text": simplify_result.get("simplified_text", request.slide_content),
-                "fk_grade": simplify_result.get("fk_grade"),
-                "original_fk": simplify_result.get("original_fk"),
-                "chunks": simplify_result.get("chunks", chunk_text(request.slide_content).get("chunks", [])),
-            }
-        )
-        error = _merge_messages(error, simplify_result.get("error"), simplify_error)
-        warning = _merge_messages(warning, simplify_result.get("warning"), simplify_warning)
+    # Ensure text actions always include chunks
+    if request.action_id in {1, 2}:
+        text_value = payload.get("simplified_text") or request.slide_content
+        if not payload.get("chunks"):
+            payload["chunks"] = chunk_text(str(text_value), chunk_strategy="sentence").get("chunks", [])
 
-    elif action_id == 3:
-        content_type = request.content_type.value
-        chunk_payload = chunk_text(request.slide_content, chunk_strategy="hybrid")
-        content.update(
-            {
-                "simplified_text": request.slide_content,
-                "chunks": chunk_payload.get("chunks", []),
-            }
-        )
+    # Typography morph for all non-hold responses.
+    prev_css = _LAST_CSS_BY_SESSION.get(session_id)
+    css = morph_typography(state_vector, locked_css=prev_css)
+    _LAST_CSS_BY_SESSION[session_id] = css
+    payload["css_variables"] = css
 
-        if content_type == "audio":
-            warning = "Audio generation path is not yet enabled; served text payload fallback."
-        elif content_type == "image":
-            warning = "Image generation path is not yet enabled; served text payload fallback."
-        elif content_type == "animation":
-            warning = "Animation generation path is not yet enabled; served text payload fallback."
-        elif content_type == "avatar":
-            warning = "Avatar generation path is not yet enabled; served text payload fallback."
-        else:
-            warning = "Content type not specified for action 3; served text payload fallback."
-
-    elif action_id == 4:
-        fallback_quiz = generate_quiz(
-            concept=request.concept or "current concept",
-            learner_id=None,
-            slide_content=request.slide_content,
-            session_id=session_id,
-        )
-        quiz_result, quiz_error, quiz_warning, latency_ms = await execute_with_timeout(
-            generate_quiz,
-            request.concept or "current concept",
-            None,
-            request.slide_content,
-            action_id=4,
-            timeout_seconds=None,
-            fallback_value=fallback_quiz,
-            session_id=session_id,
-        )
-        total_latency_ms += latency_ms
-
-        # Optional companion analogies for conceptual escape hatch.
-        analogy_result, analogy_error, analogy_warning, latency_ms = await execute_with_timeout(
-            generate_analogies,
-            request.concept or "current concept",
-            request.slide_content,
-            action_id=4,
-            timeout_seconds=3,
-            fallback_value={"analogies": []},
-            learner_level=request.learner_level.value,
-            session_id=session_id,
-        )
-        total_latency_ms += latency_ms
-
-        content.update(
-            {
-                "quiz_json": quiz_result.get("quiz_json") or quiz_result.get("questions", []),
-                "mastery_level": quiz_result.get("mastery_level"),
-                "estimated_time_seconds": quiz_result.get("estimated_time_seconds"),
-                "encouragement_text": quiz_result.get("encouragement_text"),
-                "analogy_json": analogy_result.get("analogies", []),
-            }
-        )
-        cache_hit = bool(quiz_result.get("cache_hit", False)) and bool(analogy_result.get("cache_hit", False))
-        error = _merge_messages(error, quiz_result.get("error"), quiz_error, analogy_result.get("error"), analogy_error)
-        warning = _merge_messages(
-            warning,
-            quiz_result.get("warning"),
-            quiz_warning,
-            analogy_result.get("warning"),
-            analogy_warning,
-        )
-
-    elif action_id == 5:
-        content.update(
-            {
-                "title": "Sensory Break",
-                "break_template": "Pause for a short reset: look away from the screen, breathe slowly, and stretch your shoulders.",
-                "suggested_duration_seconds": 180,
-                "encouragement_text": "Great effort so far. A brief reset can sharpen focus for the next segment.",
-            }
-        )
-
-    tier = classify_tier(action_id, request.content_type.value)
     return {
-        "action_id": action_id,
-        "tier": tier,
-        "content": content,
+        "action_id": request.action_id,
+        "content": payload,
         "cache_hit": cache_hit,
-        "warning": warning,
-        "error": error,
-        "generation_latency_ms": total_latency_ms,
+        "warning": payload.get("warning"),
+        "error": payload.get("error"),
+        "hyperfocus_override": False,
+        "hyperfocus_composite": composite,
+        "no_content": False,
+    }
+
+
+def start_prefetch(prefetch_request: PrefetchRequest) -> Dict[str, Any]:
+    request_data = {
+        "session_id": str(prefetch_request.session_id),
+        "slide_content": prefetch_request.slide_content,
+        "learner_level": prefetch_request.learner_level.value,
+        "content_type": prefetch_request.content_type.value if prefetch_request.content_type else None,
+        "concept": prefetch_request.concept,
+    }
+    queued = prefetch_manager.start_prefetch(prefetch_request.top_actions, request_data)
+
+    estimated_ms = 0
+    for action_id in prefetch_request.top_actions[:2]:
+        if action_id == 3:
+            estimated_ms = max(estimated_ms, int(get_timeout_seconds("manim") * 1000))
+        elif action_id == 2:
+            estimated_ms = max(estimated_ms, int(get_timeout_seconds("text_simplify") * 1000))
+        elif action_id == 4:
+            estimated_ms = max(estimated_ms, int(get_timeout_seconds("quiz") * 1000))
+
+    return {
+        "prefetch_started": queued > 0,
+        "tasks_queued": queued,
+        "estimated_completion_ms": estimated_ms or 2000,
+    }
+
+
+def get_prefetch_status(action_id: int, session_id: str, slide_content: str, content_type: str | None = None) -> Dict[str, Any]:
+    request_data = {
+        "session_id": session_id,
+        "slide_content": slide_content,
+        "content_type": content_type,
+    }
+    status = prefetch_manager.get_status(action_id, request_data)
+    return {
+        **status,
+        "action_id": action_id,
+        "session_id": session_id,
     }
