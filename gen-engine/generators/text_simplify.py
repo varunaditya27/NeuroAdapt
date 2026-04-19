@@ -6,12 +6,12 @@ import hashlib
 import os
 import re
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Tuple
 
 import requests
 
 try:
-    import textstat  # type: ignore
+    import textstat
 except Exception:  # pragma: no cover - optional runtime dependency
     textstat = None
 
@@ -27,7 +27,7 @@ TARGETS = {
     "university": 13.0,
 }
 
-_CACHE: Dict[str, Dict] = {}
+_CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_MAX = 1000
 
 
@@ -124,17 +124,17 @@ def _call_ollama(prompt: str, timeout_seconds: float = 4.0) -> str:
     return (payload.get("response") or "").strip()
 
 
-def _cache_get(key: str) -> Dict | None:
+def _cache_get(key: str) -> dict[str, Any] | None:
     return _CACHE.get(key)
 
 
-def _cache_put(key: str, value: Dict) -> None:
+def _cache_put(key: str, value: dict[str, Any]) -> None:
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.pop(next(iter(_CACHE)))
     _CACHE[key] = value
 
 
-def simplify_text(text: str, target_level: str = "grade8", session_id: str | None = None) -> Dict:
+def simplify_text(text: str, target_level: str = "grade8", session_id: str | None = None) -> dict[str, Any]:
     """Simplify text and verify against FK target with one strict retry."""
     normalized_level = str(target_level)
     fk_target = TARGETS.get(normalized_level, TARGETS["grade8"])
@@ -170,7 +170,9 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
             if attempt < 2:
                 # Allow strict retry before giving up.
                 continue
-            service_warning = service_warning or "LLM returned empty output twice; heuristic fallback used."
+            service_warning = (
+                service_warning or "LLM returned empty output twice; heuristic fallback used."
+            )
             candidate = _heuristic_simplify(text)
 
         candidate_fk = compute_fk_grade(candidate)

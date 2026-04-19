@@ -59,7 +59,7 @@ def _is_stem_content(text: str) -> bool:
     return any(marker in low for marker in markers)
 
 
-def _resolved_content_type(request_data: dict) -> str:
+def _resolved_content_type(request_data: dict[str, Any]) -> str:
     content_type = request_data.get("content_type")
     if content_type is not None:
         normalized = _CONTENT_TYPE_NORMALIZATION.get(str(content_type).strip().lower())
@@ -72,11 +72,11 @@ def _resolved_content_type(request_data: dict) -> str:
     return "image"
 
 
-def _safe_session_id(request_data: dict) -> str:
+def _safe_session_id(request_data: dict[str, Any]) -> str:
     return str(request_data.get("session_id", "unknown"))
 
 
-def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
+def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
     slide_content = str(request_data.get("slide_content", ""))
     learner_level = str(request_data.get("learner_level", "grade8"))
     session_id = _safe_session_id(request_data)
@@ -107,7 +107,9 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
                 {
                     "fk_grade": None,
                     "original_fk": None,
-                    "chunks": chunk_text(slide_content, chunk_strategy="sentence").get("chunks", []),
+                    "chunks": chunk_text(slide_content, chunk_strategy="sentence").get(
+                        "chunks", []
+                    ),
                 }
             )
             return payload
@@ -115,10 +117,15 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
         if error:
             payload = fallback_for("text_simplify", original_text=slide_content)
             payload["warning"] = f"Text simplification failed: {error}"
-            payload["chunks"] = chunk_text(slide_content, chunk_strategy="sentence").get("chunks", [])
+            payload["chunks"] = chunk_text(slide_content, chunk_strategy="sentence").get(
+                "chunks", []
+            )
             return payload
 
-        if state_vector.get("cognitive_load", 0.0) >= 0.82 or state_vector.get("regression_count", 0) >= 6:
+        if (
+            state_vector.get("cognitive_load", 0.0) >= 0.82
+            or state_vector.get("regression_count", 0) >= 6
+        ):
             a_result, a_timed_out, _, _ = run_with_timeout(
                 generate_analogies,
                 get_timeout_seconds("analogy"),
@@ -165,7 +172,9 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
 
             source_image = request_data.get("source_image")
             if not source_image:
-                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                image_res = generate_image(
+                    concept=concept, slide_content=slide_content, learner_level=learner_level
+                )
                 source_image = image_res.get("image_url")
 
             avatar_res, avatar_timed_out, _, avatar_error = run_with_timeout(
@@ -196,12 +205,16 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
 
             if timed_out:
                 # Cascading fallback: static image + optional audio
-                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                image_res = generate_image(
+                    concept=concept, slide_content=slide_content, learner_level=learner_level
+                )
                 audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
                 return {**image_res, **audio_res, **fallback_for("manim")}
 
             if error:
-                image_res = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+                image_res = generate_image(
+                    concept=concept, slide_content=slide_content, learner_level=learner_level
+                )
                 return {**image_res, "warning": f"Animation failed: {error}"}
 
             if anim_res.get("video_url"):
@@ -265,7 +278,7 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
     }
 
 
-def _prefetch_generator(action_id: int, request_data: dict) -> dict:
+def _prefetch_generator(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
     return _generate_payload_for_action(action_id, request_data)
 
 
@@ -278,7 +291,9 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     session_id = str(request.session_id)
     state_vector = request.state_vector.model_dump(mode="json", exclude_defaults=True)
 
-    should_preempt, composite, _ = check_hyperfocus(session_id=session_id, state_vector=state_vector)
+    should_preempt, composite, _ = check_hyperfocus(
+        session_id=session_id, state_vector=state_vector
+    )
     if should_preempt or request.action_id == 0:
         return {
             "action_id": 0,
@@ -318,7 +333,9 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     if request.action_id in {1, 2}:
         text_value = payload.get("simplified_text") or request.slide_content
         if not payload.get("chunks"):
-            payload["chunks"] = chunk_text(str(text_value), chunk_strategy="sentence").get("chunks", [])
+            payload["chunks"] = chunk_text(str(text_value), chunk_strategy="sentence").get(
+                "chunks", []
+            )
 
     # Typography morph for all non-hold responses.
     prev_css = _LAST_CSS_BY_SESSION.get(session_id)
@@ -343,7 +360,9 @@ def start_prefetch(prefetch_request: PrefetchRequest) -> Dict[str, Any]:
         "session_id": str(prefetch_request.session_id),
         "slide_content": prefetch_request.slide_content,
         "learner_level": prefetch_request.learner_level.value,
-        "content_type": prefetch_request.content_type.value if prefetch_request.content_type else None,
+        "content_type": prefetch_request.content_type.value
+        if prefetch_request.content_type
+        else None,
         "concept": prefetch_request.concept,
     }
     queued = prefetch_manager.start_prefetch(prefetch_request.top_actions, request_data)

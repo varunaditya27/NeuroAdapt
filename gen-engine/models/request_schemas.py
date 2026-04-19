@@ -99,7 +99,7 @@ RELATED:
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, ConfigDict
@@ -107,6 +107,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator, ConfigDict
 
 class LearnerLevel(str, Enum):
     """Enumeration of supported learner reading levels."""
+
     GRADE5 = "grade5"
     GRADE8 = "grade8"
     UNIVERSITY = "university"
@@ -114,6 +115,7 @@ class LearnerLevel(str, Enum):
 
 class ContentType(str, Enum):
     """Enumeration of content types for generation."""
+
     TEXT = "text"
     IMAGE = "image"
     ANIMATION = "animation"
@@ -135,22 +137,16 @@ class StateVector(BaseModel):
 
     # Core required fields from orchestrator.
     cognitive_load: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Current cognitive load estimate (0.0=low, 1.0=overloaded)"
+        ..., ge=0.0, le=1.0, description="Current cognitive load estimate (0.0=low, 1.0=overloaded)"
     )
     regression_count: int = Field(
-        ...,
-        ge=0,
-        le=100,
-        description="Number of regressions in current session"
+        ..., ge=0, le=100, description="Number of regressions in current session"
     )
     hyperfocus_composite: float = Field(
         default=0.0,
         ge=0.0,
         le=1.0,
-        description="Optional pre-computed hyperfocus composite score (compatibility path)"
+        description="Optional pre-computed hyperfocus composite score (compatibility path)",
     )
 
     # Optional fields with defaults
@@ -158,83 +154,56 @@ class StateVector(BaseModel):
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Eye gaze stability measure (0.0=unstable, 1.0=very stable)"
+        description="Eye gaze stability measure (0.0=unstable, 1.0=very stable)",
     )
     attention_switching: float = Field(
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Rate of attention switching (0.0=stable, 1.0=highly switching)"
+        description="Rate of attention switching (0.0=stable, 1.0=highly switching)",
     )
-    time_on_task: int = Field(
-        default=0,
-        ge=0,
-        description="Seconds spent on current task"
-    )
+    time_on_task: int = Field(default=0, ge=0, description="Seconds spent on current task")
     engagement_level: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Current engagement level estimate"
+        default=0.5, ge=0.0, le=1.0, description="Current engagement level estimate"
     )
     micro_pause_ratio: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Ratio of micro-pauses to total time"
+        default=0.1, ge=0.0, le=1.0, description="Ratio of micro-pauses to total time"
     )
     idle_time_bonus: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="Bonus for sustained idle periods"
+        default=0.0, ge=0.0, le=1.0, description="Bonus for sustained idle periods"
     )
 
     # Compatibility fields used by documented hyperfocus detector inputs.
     idle_time: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Idle time in seconds over recent observation window"
+        default=0.0, ge=0.0, description="Idle time in seconds over recent observation window"
     )
     keystroke_cv: float = Field(
-        default=1.0,
-        ge=0.0,
-        description="Coefficient of variation for keystroke cadence"
+        default=1.0, ge=0.0, description="Coefficient of variation for keystroke cadence"
     )
     gaze_dispersion: float = Field(
         default=1.0,
         ge=0.0,
-        description="Normalized gaze dispersion (lower means tighter fixation cluster)"
+        description="Normalized gaze dispersion (lower means tighter fixation cluster)",
     )
     scroll_velocity: float = Field(
-        default=0.0,
-        description="Signed scroll velocity for recent observation window"
+        default=0.0, description="Signed scroll velocity for recent observation window"
     )
     session_duration: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Elapsed session duration in seconds"
+        default=0.0, ge=0.0, description="Elapsed session duration in seconds"
     )
     learner_avg_duration: float = Field(
-        default=1.0,
-        ge=0.0,
-        description="Learner baseline average session duration in seconds"
+        default=1.0, ge=0.0, description="Learner baseline average session duration in seconds"
     )
 
     # Additional observer-compatible telemetry fields (optional).
     keystroke_cadence: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Raw keystroke cadence signal"
+        default=0.0, ge=0.0, description="Raw keystroke cadence signal"
     )
     response_latency: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Interaction response latency in seconds"
+        default=0.0, ge=0.0, description="Interaction response latency in seconds"
     )
     preference_delta: float = Field(
-        default=0.0,
-        description="Preference delta signal from feedback loop"
+        default=0.0, description="Preference delta signal from feedback loop"
     )
 
     model_config = ConfigDict(
@@ -248,7 +217,7 @@ class StateVector(BaseModel):
                 "time_on_task": 450,
                 "engagement_level": 0.9,
                 "micro_pause_ratio": 0.05,
-                "idle_time_bonus": 0.1
+                "idle_time_bonus": 0.1,
             }
         }
     )
@@ -257,25 +226,16 @@ class StateVector(BaseModel):
 class LearnerProfile(BaseModel):
     """Optional learner metadata for personalization."""
 
-    learner_id: Optional[UUID] = Field(
-        None,
-        description="Unique learner identifier"
-    )
-    preferred_voice: Optional[str] = Field(
-        None,
-        description="Preferred TTS voice identifier"
-    )
+    learner_id: Optional[UUID] = Field(None, description="Unique learner identifier")
+    preferred_voice: Optional[str] = Field(None, description="Preferred TTS voice identifier")
     dyslexia_profile: Optional[bool] = Field(
-        None,
-        description="Whether learner has dyslexia accommodations"
+        None, description="Whether learner has dyslexia accommodations"
     )
     autism_profile: Optional[bool] = Field(
-        None,
-        description="Whether learner has autism accommodations"
+        None, description="Whether learner has autism accommodations"
     )
     adhd_profile: Optional[bool] = Field(
-        None,
-        description="Whether learner has ADHD accommodations"
+        None, description="Whether learner has ADHD accommodations"
     )
 
 
@@ -291,68 +251,51 @@ class GenerateRequest(BaseModel):
         ...,
         ge=0,
         le=5,
-        description="Action to perform (0=hold, 1=chunk, 2=simplify, 3=visual, 4=quiz, 5=break)"
+        description="Action to perform (0=hold, 1=chunk, 2=simplify, 3=visual, 4=quiz, 5=break)",
     )
     slide_content: str = Field(
         ...,
         min_length=1,
         max_length=5000,
-        description="Content to transform (text, concept description, etc.)"
+        description="Content to transform (text, concept description, etc.)",
     )
-    learner_level: LearnerLevel = Field(
-        ...,
-        description="Target reading/complexity level"
-    )
-    session_id: UUID = Field(
-        ...,
-        description="Unique session identifier"
-    )
+    learner_level: LearnerLevel = Field(..., description="Target reading/complexity level")
+    session_id: UUID = Field(..., description="Unique session identifier")
     confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Orchestrator confidence in this action (0.0-1.0)"
+        ..., ge=0.0, le=1.0, description="Orchestrator confidence in this action (0.0-1.0)"
     )
-    state_vector: StateVector = Field(
-        ...,
-        description="Real-time learner state information"
-    )
+    state_vector: StateVector = Field(..., description="Real-time learner state information")
 
     # Optional fields
     learner_profile: Optional[LearnerProfile] = Field(
-        None,
-        description="Learner-specific preferences and accommodations"
+        None, description="Learner-specific preferences and accommodations"
     )
     concept: Optional[str] = Field(
         None,
         min_length=1,
         max_length=200,
         validation_alias=AliasChoices("concept", "concept_id"),
-        description="Explicit concept override (if different from slide_content)"
+        description="Explicit concept override (if different from slide_content)",
     )
     content_type: Optional[ContentType] = Field(
-        None,
-        description="Specific content type for action_id=3 (visual generation)"
+        None, description="Specific content type for action_id=3 (visual generation)"
     )
-    request_id: Optional[str] = Field(
-        None,
-        description="Client-provided request ID for tracing"
-    )
+    request_id: Optional[str] = Field(None, description="Client-provided request ID for tracing")
 
-    @field_validator('action_id')
+    @field_validator("action_id")
     @classmethod
     def validate_action_id(cls, v: int) -> int:
         """Ensure action_id is within valid range."""
         if not (0 <= v <= 5):
-            raise ValueError(f'Action ID must be between 0 and 5, got {v}')
+            raise ValueError(f"Action ID must be between 0 and 5, got {v}")
         return v
 
-    @field_validator('confidence')
+    @field_validator("confidence")
     @classmethod
     def validate_confidence(cls, v: float) -> float:
         """Ensure confidence is within valid range."""
         if not (0.0 <= v <= 1.0):
-            raise ValueError(f'Confidence must be between 0.0 and 1.0, got {v}')
+            raise ValueError(f"Confidence must be between 0.0 and 1.0, got {v}")
         return v
 
     model_config = ConfigDict(
@@ -370,10 +313,10 @@ class GenerateRequest(BaseModel):
                     "eye_gaze_stability": 0.8,
                     "attention_switching": 0.2,
                     "time_on_task": 450,
-                    "engagement_level": 0.9
+                    "engagement_level": 0.9,
                 },
                 "concept": "photosynthesis",
-                "content_type": "text"
+                "content_type": "text",
             }
         }
     )
@@ -386,46 +329,38 @@ class PrefetchRequest(BaseModel):
     Used to pre-generate content for likely next actions.
     """
 
-    session_id: UUID = Field(
-        ...,
-        description="Session to prefetch for"
-    )
+    session_id: UUID = Field(..., description="Session to prefetch for")
     top_actions: list[int] = Field(
         ...,
         min_length=1,
         max_length=3,
         validation_alias=AliasChoices("top_actions", "action_candidates"),
-        description="Action IDs to prefetch (ordered by Q-value)"
+        description="Action IDs to prefetch (ordered by Q-value)",
     )
     slide_content: str = Field(
-        ...,
-        min_length=1,
-        max_length=5000,
-        description="Current slide content for prefetch context"
+        ..., min_length=1, max_length=5000, description="Current slide content for prefetch context"
     )
     learner_level: LearnerLevel = Field(
-        default=LearnerLevel.GRADE8,
-        description="Learner's current level"
+        default=LearnerLevel.GRADE8, description="Learner's current level"
     )
     content_type: Optional[ContentType] = Field(
-        None,
-        description="Optional content type hint for action_id=3 prefetch"
+        None, description="Optional content type hint for action_id=3 prefetch"
     )
     concept: Optional[str] = Field(
         None,
         min_length=1,
         max_length=200,
         validation_alias=AliasChoices("concept", "concept_id"),
-        description="Optional concept hint used by visual generators"
+        description="Optional concept hint used by visual generators",
     )
 
-    @field_validator('top_actions')
+    @field_validator("top_actions")
     @classmethod
     def validate_top_actions(cls, v: list[int]) -> list[int]:
         """Ensure all action IDs are valid."""
         for action_id in v:
             if not (0 <= action_id <= 5):
-                raise ValueError(f'All action IDs must be between 0 and 5, got {action_id}')
+                raise ValueError(f"All action IDs must be between 0 and 5, got {action_id}")
         return v
 
     model_config = ConfigDict(
@@ -435,7 +370,7 @@ class PrefetchRequest(BaseModel):
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
                 "action_candidates": [3, 4, 2],
                 "slide_content": "Mitochondria are the powerhouse of the cell...",
-                "learner_level": "grade8"
+                "learner_level": "grade8",
             }
-        }
+        },
     )

@@ -5,13 +5,14 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Any
 
 AUTISM_SAFE_NEGATIVE_PROMPT = (
     "high contrast, cluttered, busy background, neon colors, flashing elements, "
     "multiple faces, photorealistic crowds, chaotic composition, sharp geometric "
     "patterns, intense shadows, harsh lighting, saturated colors"
 )
+
 
 def _resolve_cache_dir() -> Path:
     preferred = Path(__file__).resolve().parents[1] / "cache" / "images"
@@ -26,7 +27,7 @@ def _resolve_cache_dir() -> Path:
 
 _CACHE_DIR = _resolve_cache_dir()
 
-_PIPE = None
+_PIPE: Any | None = None
 _PIPE_DEVICE = "cpu"
 
 
@@ -70,14 +71,16 @@ def _write_svg_placeholder(file_path: Path, concept: str) -> None:
     file_path.write_text(svg, encoding="utf-8")
 
 
-def _load_diffusion_pipeline():
+def _load_diffusion_pipeline() -> Any | None:
     global _PIPE, _PIPE_DEVICE
     if _PIPE is not None:
         return _PIPE
 
     try:
-        import torch  # type: ignore
-        from diffusers import StableDiffusionPipeline  # type: ignore
+        import torch
+        from diffusers import StableDiffusionPipeline as _StableDiffusionPipeline
+
+        StableDiffusionPipeline: Any = _StableDiffusionPipeline
 
         _PIPE_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if _PIPE_DEVICE == "cuda" else torch.float32
@@ -96,7 +99,7 @@ def generate_image(
     slide_content: str = "",
     learner_level: str = "grade8",
     session_id: str | None = None,
-) -> Dict:
+) -> dict[str, Any]:
     """Generate an autism-safe educational image, or SVG fallback."""
     key = _cache_key(concept, slide_content, learner_level)
     png_path = _CACHE_DIR / f"{key}.png"

@@ -26,7 +26,7 @@ STARTUP/SHUTDOWN:
     - Load prompt templates from prompts/
     - Warm up Ollama connection
     - Initialize Prometheus metrics
-    
+
 ENVIRONMENT VARIABLES:
     - OLLAMA_URL : Default "http://localhost:11434"
     - TTS_URL : Default "http://localhost:8880"
@@ -56,16 +56,19 @@ import sys
 import logging
 import shutil
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from pathlib import Path
 from datetime import datetime
-import time
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 import requests
+from orchestration.prefetch_manager import prefetch_manager
 from models.response_schemas import HealthResponse
+from routers.generate import router as generate_router
+from routers.health import router as health_router
 
 # ============================================================================
 # CONFIGURATION & LOGGING
@@ -73,10 +76,11 @@ from models.response_schemas import HealthResponse
 
 load_dotenv()
 
-CONFIG = {
+CONFIG: dict[str, Any] = {
     "OLLAMA_URL": os.getenv("OLLAMA_URL", "http://localhost:11434"),
     "KOKORO_TTS_URL": os.getenv("KOKORO_TTS_URL") or os.getenv("TTS_URL", "http://localhost:8880"),
-    "POSTGRES_URL": os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/neuroadapt"),
+    "POSTGRES_URL": os.getenv("POSTGRES_URL")
+    or os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/neuroadapt"),
     "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
     "CACHE_MAX_SIZE": int(os.getenv("CACHE_MAX_SIZE", os.getenv("GENERATION_CACHE_SIZE", "100"))),
     "CACHE_TTL_SECONDS": int(os.getenv("CACHE_TTL_SECONDS", "600")),
@@ -98,26 +102,24 @@ REQUIRED_PROMPTS = [
 ]
 
 logging.basicConfig(
-    level=getattr(logging, CONFIG["LOG_LEVEL"]),
+    level=getattr(logging, str(CONFIG["LOG_LEVEL"])),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
 try:
     from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("prometheus-client not available, metrics disabled")
 
-from routers import generate, health
-from orchestration.prefetch_manager import prefetch_manager
-
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Run startup and shutdown logic via FastAPI lifespan hooks."""
     logger.info("=" * 80)
     logger.info("gen-engine STARTING UP")
@@ -143,7 +145,9 @@ async def lifespan(_app: FastAPI):
     ]
     app_state["prompt_health"] = {"missing_required": missing_required_prompts}
     if missing_required_prompts:
-        logger.warning("✗ Missing required prompt templates: %s", ", ".join(missing_required_prompts))
+        logger.warning(
+            "✗ Missing required prompt templates: %s", ", ".join(missing_required_prompts)
+        )
     else:
         logger.info("✓ All required prompt templates present")
 
@@ -160,6 +164,7 @@ async def lifespan(_app: FastAPI):
         logger.info("gen-engine shutting down")
         app_state["cache"].clear()
 
+
 # ============================================================================
 # FASTAPI APP INITIALIZATION
 # ============================================================================
@@ -175,61 +180,46 @@ app = FastAPI(
 if PROMETHEUS_AVAILABLE:
     # Request metrics
     REQUEST_COUNT = Counter(
-        'gen_engine_requests_total',
-        'Total number of generation requests',
-        ['action_id', 'status']
+        "gen_engine_requests_total", "Total number of generation requests", ["action_id", "status"]
     )
     REQUEST_LATENCY = Histogram(
-        'gen_engine_request_duration_seconds',
-        'Request duration in seconds',
-        ['action_id']
+        "gen_engine_request_duration_seconds", "Request duration in seconds", ["action_id"]
     )
-    CACHE_HITS = Counter(
-        'gen_engine_cache_hits_total',
-        'Total number of cache hits',
-        ['action_id']
-    )
+    CACHE_HITS = Counter("gen_engine_cache_hits_total", "Total number of cache hits", ["action_id"])
     CACHE_MISSES = Counter(
-        'gen_engine_cache_misses_total',
-        'Total number of cache misses',
-        ['action_id']
+        "gen_engine_cache_misses_total", "Total number of cache misses", ["action_id"]
     )
-    CACHE_SIZE = Gauge(
-        'gen_engine_cache_size',
-        'Current cache size'
-    )
+    CACHE_SIZE = Gauge("gen_engine_cache_size", "Current cache size")
     FALLBACK_EVENTS = Counter(
-        'gen_engine_fallback_events_total',
-        'Total fallback events emitted by generation flows',
-        ['action_id', 'stage']
+        "gen_engine_fallback_events_total",
+        "Total fallback events emitted by generation flows",
+        ["action_id", "stage"],
     )
     TIMEOUT_EVENTS = Counter(
-        'gen_engine_timeout_events_total',
-        'Total timeout-triggered degradation events',
-        ['action_id', 'stage']
+        "gen_engine_timeout_events_total",
+        "Total timeout-triggered degradation events",
+        ["action_id", "stage"],
     )
     HYPERFOCUS_OVERRIDES = Counter(
-        'gen_engine_hyperfocus_overrides_total',
-        'Total no-content responses caused by hyperfocus protection',
-        ['reason']
+        "gen_engine_hyperfocus_overrides_total",
+        "Total no-content responses caused by hyperfocus protection",
+        ["reason"],
     )
     FK_VERIFICATION_RESULTS = Counter(
-        'gen_engine_fk_verification_results_total',
-        'FK verification outcomes for text simplification responses',
-        ['target_level', 'result']
+        "gen_engine_fk_verification_results_total",
+        "FK verification outcomes for text simplification responses",
+        ["target_level", "result"],
     )
     PREFETCH_REQUESTS = Counter(
-        'gen_engine_prefetch_requests_total',
-        'Total number of prefetch API requests',
-        ['status']
+        "gen_engine_prefetch_requests_total", "Total number of prefetch API requests", ["status"]
     )
     PREFETCH_TASKS_QUEUED = Counter(
-        'gen_engine_prefetch_tasks_queued_total',
-        'Total number of speculative tasks queued by prefetch requests'
+        "gen_engine_prefetch_tasks_queued_total",
+        "Total number of speculative tasks queued by prefetch requests",
     )
 
 # Global state (Phase 0: minimal)
-app_state = {
+app_state: dict[str, Any] = {
     "cache": {},
     "prompts": {},
     "prompt_health": {"missing_required": []},
@@ -240,6 +230,7 @@ app_state = {
 # ============================================================================
 # SERVICE VERIFICATION UTILITIES
 # ============================================================================
+
 
 def verify_service(service_name: str, url: str, timeout: int = 2) -> Tuple[bool, Optional[str]]:
     """
@@ -258,15 +249,16 @@ def verify_service(service_name: str, url: str, timeout: int = 2) -> Tuple[bool,
     except Exception as e:
         return False, str(e)
 
-def load_prompts() -> dict:
+
+def load_prompts() -> dict[str, str]:
     """Load all prompt templates from prompts/ directory."""
-    prompts = {}
+    prompts: dict[str, str] = {}
     prompts_dir = Path(__file__).parent / "prompts"
-    
+
     if not prompts_dir.exists():
         logger.warning(f"Prompts directory not found at {prompts_dir}")
         return prompts
-    
+
     for prompt_file in prompts_dir.glob("*.txt"):
         try:
             with open(prompt_file, "r") as f:
@@ -274,7 +266,7 @@ def load_prompts() -> dict:
             logger.debug(f"Loaded prompt: {prompt_file.stem}")
         except Exception as e:
             logger.error(f"Failed to load prompt {prompt_file.stem}: {e}")
-    
+
     return prompts
 
 
@@ -331,14 +323,20 @@ def _refresh_services(force: bool = False) -> None:
             "error": error if not is_available else None,
         }
 
+
 # ============================================================================
 # ROUTES
 # ============================================================================
 
+
 @app.get("/")
-async def root():
+async def root() -> dict[str, Any]:
     """Root endpoint with version info."""
-    uptime = (datetime.now() - app_state["startup_time"]).total_seconds() if app_state["startup_time"] else 0
+    uptime = (
+        (datetime.now() - app_state["startup_time"]).total_seconds()
+        if app_state["startup_time"]
+        else 0
+    )
     return {
         "service": "gen-engine",
         "version": "0.1.0",
@@ -346,13 +344,14 @@ async def root():
         "uptime_seconds": uptime,
     }
 
+
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check() -> JSONResponse:
     """Detailed health check endpoint for Kubernetes probes."""
     _refresh_services(force=False)
 
     services_status = {}
-    
+
     # Check service status but don't fail if they're unavailable
     # (gen-engine can degrade gracefully)
     for service_name, service_info in app_state["services"].items():
@@ -376,7 +375,7 @@ async def health_check():
     disk_space_gb = round(disk.free / (1024**3), 1)
     cache_size_mb = _directory_size_mb(Path(__file__).parent / "cache")
     overall_status = "healthy" if (ollama_reachable and kokoro_reachable) else "degraded"
-    
+
     # Always return 200 OK as long as gen-engine app itself is running
     # External service failures don't make the app unhealthy
     return JSONResponse(
@@ -401,14 +400,12 @@ async def health_check():
         },
     )
 
+
 @app.get("/metrics")
-async def metrics():
+async def metrics() -> Response:
     """Prometheus metrics endpoint."""
     if not PROMETHEUS_AVAILABLE:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Prometheus metrics not available"}
-        )
+        return JSONResponse(status_code=503, content={"error": "Prometheus metrics not available"})
 
     # Update cache size gauge (prefetch cache is the active generation cache).
     try:
@@ -417,14 +414,12 @@ async def metrics():
     except Exception:
         CACHE_SIZE.set(len(app_state["cache"]))
 
-    return Response(
-        generate_latest(),
-        media_type=CONTENT_TYPE_LATEST
-    )
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 # Include routers
-app.include_router(generate.router, prefix="/api", tags=["generation"])
-app.include_router(health.router, tags=["health"])
+app.include_router(generate_router, prefix="/api", tags=["generation"])
+app.include_router(health_router, tags=["health"])
 
 # ============================================================================
 # ENTRY POINT
@@ -432,6 +427,7 @@ app.include_router(health.router, tags=["health"])
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         # Pass the in-process app object directly so `python main.py` does not
         # import this module a second time and double-register Prometheus metrics.

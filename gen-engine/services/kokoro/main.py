@@ -133,8 +133,12 @@ def _tone_wav_bytes(text: str, speed: float, sample_rate: int = 22_050) -> bytes
         samples = int(sample_rate * (duration_ms / 1000.0))
 
         for n in range(samples):
-            envelope = min(1.0, n / max(1, samples * 0.15)) * min(1.0, (samples - n) / max(1, samples * 0.2))
-            sample = int(amplitude * envelope * math.sin((2.0 * math.pi * base_freq * n) / sample_rate))
+            envelope = min(1.0, n / max(1, samples * 0.15)) * min(
+                1.0, (samples - n) / max(1, samples * 0.2)
+            )
+            sample = int(
+                amplitude * envelope * math.sin((2.0 * math.pi * base_freq * n) / sample_rate)
+            )
             audio.extend(struct.pack("<h", sample))
 
         # Word break pause.

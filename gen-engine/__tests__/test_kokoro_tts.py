@@ -37,7 +37,9 @@ def test_extract_word_timestamps_passes_text_param(monkeypatch, tmp_path):
 
     monkeypatch.setattr(kt.requests, "get", fake_get)
 
-    stamps, confidence = kt.extract_word_timestamps_with_confidence(str(wav_path), text="hello world")
+    stamps, confidence = kt.extract_word_timestamps_with_confidence(
+        str(wav_path), text="hello world"
+    )
 
     assert confidence == "high"
     assert stamps

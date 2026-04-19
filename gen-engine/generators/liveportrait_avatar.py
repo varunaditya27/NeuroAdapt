@@ -6,7 +6,8 @@ import hashlib
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, List
+
 
 def _resolve_avatar_dir() -> Path:
     preferred = Path(__file__).resolve().parents[1] / "cache" / "avatars"
@@ -37,9 +38,9 @@ def _candidate_script() -> Path | None:
 def generate_avatar_video(
     source_image: str,
     audio_url: str,
-    word_timestamps: List[dict] | None = None,
+    word_timestamps: List[dict[str, Any]] | None = None,
     learner_id: str | None = None,
-) -> Dict:
+) -> dict[str, Any]:
     """Generate talking avatar video if LivePortrait is configured, otherwise fallback."""
     source_path = Path(source_image) if source_image else None
     audio_path = Path(audio_url) if audio_url else None

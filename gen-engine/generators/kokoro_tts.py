@@ -7,9 +7,10 @@ import hashlib
 import os
 import wave
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, cast
 
 import requests
+
 
 def _resolve_audio_dir() -> Path:
     preferred = Path(__file__).resolve().parents[1] / "cache" / "audio"
@@ -43,12 +44,12 @@ def _duration_from_wav(file_path: Path) -> int:
         return 0
 
 
-def _heuristic_word_timestamps(text: str, duration_ms: int) -> List[dict]:
+def _heuristic_word_timestamps(text: str, duration_ms: int) -> list[dict[str, Any]]:
     words = [w for w in text.split() if w.strip()]
     if not words:
         return []
     step = max(120, int(duration_ms / len(words))) if duration_ms > 0 else 220
-    out = []
+    out: list[dict[str, Any]] = []
     cursor = 0
     for word in words:
         out.append({"word": word, "start_ms": cursor, "end_ms": cursor + step})
@@ -56,7 +57,9 @@ def _heuristic_word_timestamps(text: str, duration_ms: int) -> List[dict]:
     return out
 
 
-def extract_word_timestamps_with_confidence(audio_path: str, text: str | None = None) -> tuple[List[dict], str]:
+def extract_word_timestamps_with_confidence(
+    audio_path: str, text: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
     """Use Kokoro alignment endpoint if available, else fall back to heuristic timings."""
     try:
         response = requests.get(
@@ -76,13 +79,13 @@ def extract_word_timestamps_with_confidence(audio_path: str, text: str | None = 
     return _heuristic_word_timestamps(text or "", duration_ms), "heuristic"
 
 
-def extract_word_timestamps(audio_path: str, text: str | None = None) -> List[dict]:
+def extract_word_timestamps(audio_path: str, text: str | None = None) -> list[dict[str, Any]]:
     """Backward-compatible helper returning only timestamp entries."""
     stamps, _ = extract_word_timestamps_with_confidence(audio_path, text=text)
     return stamps
 
 
-def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> Dict:
+def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> dict[str, Any]:
     """Create a Kokoro voice profile from a short sample."""
     with open(sample_audio_path, "rb") as sample_file:
         response = requests.post(
@@ -122,7 +125,7 @@ def _resolve_voice(voice_profile: str | None) -> tuple[str, str | None]:
 def _extract_wav_bytes(response: requests.Response) -> bytes:
     content_type = (response.headers.get("content-type") or "").lower()
     if "application/json" not in content_type:
-        return response.content
+        return cast(bytes, response.content)
 
     payload = response.json()
     for key in ("audio_base64", "audio", "audio_content"):
@@ -134,7 +137,7 @@ def _extract_wav_bytes(response: requests.Response) -> bytes:
     if isinstance(audio_url, str) and audio_url.strip():
         follow = requests.get(audio_url, timeout=4)
         follow.raise_for_status()
-        return follow.content
+        return cast(bytes, follow.content)
 
     raise ValueError("Kokoro JSON response did not contain audio bytes")
 
@@ -145,7 +148,7 @@ def generate_tts(
     speed: float = 0.85,
     learner_id: str | None = None,
     session_id: str | None = None,
-) -> Dict:
+) -> dict[str, Any]:
     """Generate TTS with calm defaults and robust fallbacks."""
     if not text.strip():
         return {"audio_url": None, "word_timestamps": [], "warning": "No text provided for TTS."}
@@ -158,7 +161,9 @@ def generate_tts(
 
     if wav_path.exists():
         duration_ms = _duration_from_wav(wav_path)
-        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
+        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(
+            str(wav_path), text=text
+        )
         payload = {
             "audio_url": str(wav_path),
             "duration_ms": duration_ms,
@@ -189,7 +194,9 @@ def generate_tts(
         wav_path.write_bytes(_extract_wav_bytes(response))
 
         duration_ms = _duration_from_wav(wav_path)
-        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
+        timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(
+            str(wav_path), text=text
+        )
 
         result = {
             "audio_url": str(wav_path),

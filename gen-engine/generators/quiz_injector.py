@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List
+from typing import Any, List
 
 try:
-    import psycopg2  # type: ignore
+    import psycopg2
 except Exception:  # pragma: no cover - optional dependency
     psycopg2 = None
 
@@ -95,7 +95,7 @@ def _encouragement_for(tier: str) -> str:
     return "Awesome—you're ready for transfer-level questions."
 
 
-def _question_set(concept_key: str, terms: List[str], tier: str) -> List[dict]:
+def _question_set(concept_key: str, terms: List[str], tier: str) -> list[dict[str, Any]]:
     fallback_terms = terms + ["process", "system", "energy", "model"]
     t1, t2, t3 = fallback_terms[0], fallback_terms[1], fallback_terms[2]
 
@@ -104,7 +104,7 @@ def _question_set(concept_key: str, terms: List[str], tier: str) -> List[dict]:
         return [
             {
                 "id": 1,
-                "text": f"Which term is most central to this lesson?",
+                "text": "Which term is most central to this lesson?",
                 "options": [concept_key, t1, t2, t3],
                 "correct_index": 0,
                 "difficulty": difficulty,
@@ -113,7 +113,7 @@ def _question_set(concept_key: str, terms: List[str], tier: str) -> List[dict]:
                 "id": 2,
                 "text": f"What is the safest summary of {concept_key}?",
                 "options": [
-                    f"It is a core idea in this slide.",
+                    "It is a core idea in this slide.",
                     "It is unrelated trivia.",
                     "It is always false.",
                     "It replaces every concept.",
@@ -222,7 +222,7 @@ def generate_quiz(
     session_id: str,
     concept: str | None = None,
     learner_id: str | None = None,
-) -> Dict:
+) -> dict[str, Any]:
     """Generate 3 MCQs with difficulty scaled by concept mastery."""
     terms = _extract_terms(slide_content)
     concept_key = (concept or (terms[0] if terms else "core concept")).lower()

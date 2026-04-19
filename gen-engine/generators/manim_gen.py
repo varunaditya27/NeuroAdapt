@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Tuple
 
 import requests
 
@@ -42,7 +42,7 @@ def _load_prompt(filename: str, fallback: str) -> str:
 
 
 def _default_scene_code(concept: str) -> str:
-    title = (concept or "Concept").replace("\"", "")
+    title = (concept or "Concept").replace('"', "")
     return f"""from manim import *
 
 class NeuroScene(Scene):
@@ -65,10 +65,10 @@ class NeuroScene(Scene):
 def _extract_python_code(text: str) -> str:
     fenced = re.findall(r"```python\s*(.*?)```", text, flags=re.DOTALL)
     if fenced:
-        return fenced[0].strip()
+        return str(fenced[0].strip())
     fenced_any = re.findall(r"```\s*(.*?)```", text, flags=re.DOTALL)
     if fenced_any:
-        return fenced_any[0].strip()
+        return str(fenced_any[0].strip())
     return text.strip()
 
 
@@ -88,7 +88,9 @@ def _call_ollama(prompt: str, system: str, timeout_seconds: float = 10.0) -> str
     return (response.json().get("response") or "").strip()
 
 
-def _render_scene(scene_code: str, output_stem: str, timeout_seconds: float) -> Tuple[bool, str, str | None]:
+def _render_scene(
+    scene_code: str, output_stem: str, timeout_seconds: float
+) -> Tuple[bool, str, str | None]:
     with tempfile.TemporaryDirectory(prefix="neuroadapt_manim_") as temp_dir:
         temp_path = Path(temp_dir)
         scene_file = temp_path / "scene.py"
@@ -107,7 +109,7 @@ def _render_scene(scene_code: str, output_stem: str, timeout_seconds: float) -> 
             return False, "manim render timed out", None
 
         if proc.returncode != 0:
-            logs = (proc.stderr or "")
+            logs = proc.stderr or ""
             if proc.stdout:
                 logs = f"{logs}\n{proc.stdout}".strip()
             return False, (logs or "manim render failed"), None
@@ -118,7 +120,7 @@ def _render_scene(scene_code: str, output_stem: str, timeout_seconds: float) -> 
 
         out_path = _VIDEO_DIR / f"{output_stem}.mp4"
         shutil.move(str(matches[0]), out_path)
-        logs = (proc.stdout or "")
+        logs = proc.stdout or ""
         if proc.stderr:
             logs = f"{logs}\n{proc.stderr}".strip()
         return True, (logs or "ok"), str(out_path)
@@ -160,7 +162,7 @@ def generate_manim_animation(
     learner_level: str = "grade8",
     session_id: str | None = None,
     max_retries: int = 2,
-) -> Dict:
+) -> dict[str, Any]:
     """Generate animation; fall back to static image if unavailable."""
     key = hashlib.md5(f"{concept}:{learner_level}:{slide_content}".encode("utf-8")).hexdigest()
     cached_video = _VIDEO_DIR / f"{key}.mp4"
@@ -177,7 +179,9 @@ def generate_manim_animation(
         }
 
     if shutil.which("manim") is None:
-        fallback = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+        fallback = generate_image(
+            concept=concept, slide_content=slide_content, learner_level=learner_level
+        )
         return {
             "video_url": None,
             "duration_ms": 0,
@@ -251,7 +255,9 @@ def generate_manim_animation(
             }
         last_error = message
 
-    fallback = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
+    fallback = generate_image(
+        concept=concept, slide_content=slide_content, learner_level=learner_level
+    )
     return {
         "video_url": None,
         "duration_ms": 0,

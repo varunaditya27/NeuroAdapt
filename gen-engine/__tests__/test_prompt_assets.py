@@ -18,5 +18,10 @@ def test_required_prompt_assets_exist_and_are_non_empty():
     missing = [name for name in required if not (prompts_dir / name).exists()]
     assert not missing, f"Missing required prompt files: {missing}"
 
-    empty = [name for name in required if (prompts_dir / name).exists() and not (prompts_dir / name).read_text(encoding='utf-8').strip()]
+    empty = [
+        name
+        for name in required
+        if (prompts_dir / name).exists()
+        and not (prompts_dir / name).read_text(encoding="utf-8").strip()
+    ]
     assert not empty, f"Prompt files must not be empty: {empty}"

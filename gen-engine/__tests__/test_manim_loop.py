@@ -36,7 +36,9 @@ def test_manim_cache_hit_returns_existing_mp4(tmp_path, monkeypatch):
     cached = tmp_path / f"{key}.mp4"
     cached.write_bytes(b"fake mp4")
 
-    result = manim_gen.generate_manim_animation(concept=concept, slide_content=slide, learner_level=level)
+    result = manim_gen.generate_manim_animation(
+        concept=concept, slide_content=slide, learner_level=level
+    )
 
     assert result["cache_hit"] is True
     assert result["video_url"] == str(cached)

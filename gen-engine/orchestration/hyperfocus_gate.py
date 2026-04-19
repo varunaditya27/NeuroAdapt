@@ -58,7 +58,9 @@ def compute_hyperfocus_composite(state_vector: Dict[str, Any]) -> float:
             1.0 if keystroke_cv < 0.3 else 0.0,
             1.0 if gaze_dispersion < 0.15 else 0.0,
             1.0 if abs(scroll_velocity) < 0.05 else 0.0,
-            1.0 if learner_avg_duration > 0 and session_duration > (learner_avg_duration * 1.5) else 0.0,
+            1.0
+            if learner_avg_duration > 0 and session_duration > (learner_avg_duration * 1.5)
+            else 0.0,
         ]
         weights = [0.25, 0.20, 0.30, 0.15, 0.10]
         composite = sum(weight * score for weight, score in zip(weights, scores))

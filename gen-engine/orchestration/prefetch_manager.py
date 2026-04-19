@@ -8,12 +8,15 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Tuple
+
+JSONDict = dict[str, Any]
+GeneratorCallback = Callable[[int, JSONDict], JSONDict]
 
 
 @dataclass
 class _CacheEntry:
-    value: dict
+    value: JSONDict
     created_at: float
 
 
@@ -23,10 +26,10 @@ class PrefetchManager:
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries
 
-        self._cache: Dict[str, _CacheEntry] = {}
-        self._active: Dict[str, Future] = {}
+        self._cache: dict[str, _CacheEntry] = {}
+        self._active: dict[str, Future[JSONDict]] = {}
         self._lock = threading.Lock()
-        self._generator: Optional[Callable[[int, dict], dict]] = None
+        self._generator: Optional[GeneratorCallback] = None
         self._cleared_sessions: set[str] = set()
 
     _PREFETCHABLE_ACTIONS = {2, 3, 4}
@@ -53,7 +56,7 @@ class PrefetchManager:
         "auto": "auto",
     }
 
-    def set_generator(self, callback: Callable[[int, dict], dict]) -> None:
+    def set_generator(self, callback: GeneratorCallback) -> None:
         self._generator = callback
 
     def _normalize_content_type(self, content_type: Any) -> str:
@@ -157,7 +160,7 @@ class PrefetchManager:
                 deduped.append(action_id)
         return deduped
 
-    def _on_done(self, cache_keys: List[str], future: Future) -> None:
+    def _on_done(self, cache_keys: List[str], future: Future[JSONDict]) -> None:
         with self._lock:
             for key in cache_keys:
                 self._active.pop(key, None)
@@ -180,7 +183,7 @@ class PrefetchManager:
                 self._cache[key] = _CacheEntry(value=value, created_at=now)
             self._prune_locked()
 
-    def start_prefetch(self, action_candidates: Iterable[Any], request_data: dict) -> int:
+    def start_prefetch(self, action_candidates: Iterable[Any], request_data: JSONDict) -> int:
         """Start speculative generation for top-2 candidates."""
         if self._generator is None:
             return 0
@@ -203,7 +206,7 @@ class PrefetchManager:
             )
             if not cache_keys:
                 continue
-            future: Future | None = None
+            future: Future[JSONDict] | None = None
 
             with self._lock:
                 self._prune_locked()
@@ -221,16 +224,24 @@ class PrefetchManager:
             # If the future already finished, callback executes immediately in this thread;
             # outside-lock registration prevents deadlocks against _on_done locking.
             if future is not None:
-                future.add_done_callback(lambda f, keys=list(cache_keys): self._on_done(keys, f))
+
+                def _finalize_prefetch(
+                    fut: Future[JSONDict], keys: list[str] = list(cache_keys)
+                ) -> None:
+                    self._on_done(keys, fut)
+
+                future.add_done_callback(_finalize_prefetch)
 
         return queued
 
-    def get_cached(self, action_id: int, request_data: dict) -> Optional[dict]:
+    def get_cached(self, action_id: int, request_data: JSONDict) -> Optional[JSONDict]:
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
         learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
+        keys = self._candidate_keys(
+            session_id, action_id, slide_content, learner_level, content_type
+        )
 
         with self._lock:
             self._prune_locked()
@@ -240,7 +251,9 @@ class PrefetchManager:
                     return dict(entry.value)
             return None
 
-    def get_cached_or_wait(self, action_id: int, request_data: dict, timeout: float = 30) -> Tuple[Optional[dict], bool]:
+    def get_cached_or_wait(
+        self, action_id: int, request_data: JSONDict, timeout: float = 30
+    ) -> Tuple[Optional[JSONDict], bool]:
         cached = self.get_cached(action_id, request_data)
         if cached is not None:
             return cached, True
@@ -249,10 +262,12 @@ class PrefetchManager:
         slide_content = str(request_data.get("slide_content", ""))
         learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
+        keys = self._candidate_keys(
+            session_id, action_id, slide_content, learner_level, content_type
+        )
 
         selected_key: str | None = None
-        future: Future | None = None
+        future: Future[JSONDict] | None = None
         with self._lock:
             for key in keys:
                 maybe = self._active.get(key)
@@ -289,12 +304,14 @@ class PrefetchManager:
 
         return dict(value), True
 
-    def get_status(self, action_id: int, request_data: dict) -> Dict[str, Any]:
+    def get_status(self, action_id: int, request_data: JSONDict) -> dict[str, Any]:
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
         learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
+        keys = self._candidate_keys(
+            session_id, action_id, slide_content, learner_level, content_type
+        )
 
         with self._lock:
             self._prune_locked()

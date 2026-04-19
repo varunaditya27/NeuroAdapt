@@ -78,7 +78,9 @@ def test_prefetch_content_type_alias_is_retrievable_with_auto_key():
     queued = manager.start_prefetch([3], prefetch_request)
     assert queued == 1
 
-    value, cache_hit = manager.get_cached_or_wait(action_id=3, request_data=query_request, timeout=2)
+    value, cache_hit = manager.get_cached_or_wait(
+        action_id=3, request_data=query_request, timeout=2
+    )
     assert cache_hit is True
     assert value is not None
     assert value["action_id"] == 3
@@ -117,7 +119,9 @@ def test_clear_session_prevents_stale_result_from_repopulating_cache():
 
 def test_prefetch_isolated_by_learner_level():
     manager = PrefetchManager(max_workers=1, ttl_seconds=60, max_entries=10)
-    manager.set_generator(lambda action_id, request: {"action_id": action_id, "level": request.get("learner_level")})
+    manager.set_generator(
+        lambda action_id, request: {"action_id": action_id, "level": request.get("learner_level")}
+    )
 
     grade5_request = {
         "session_id": "s_level",
@@ -128,7 +132,9 @@ def test_prefetch_isolated_by_learner_level():
     queued = manager.start_prefetch([3], grade5_request)
     assert queued == 1
 
-    value_grade5, hit_grade5 = manager.get_cached_or_wait(action_id=3, request_data=grade5_request, timeout=2)
+    value_grade5, hit_grade5 = manager.get_cached_or_wait(
+        action_id=3, request_data=grade5_request, timeout=2
+    )
     assert hit_grade5 is True
     assert value_grade5 is not None
     assert value_grade5.get("level") == "grade5"
@@ -139,6 +145,8 @@ def test_prefetch_isolated_by_learner_level():
         "learner_level": "grade8",
         "content_type": "animation",
     }
-    value_grade8, hit_grade8 = manager.get_cached_or_wait(action_id=3, request_data=grade8_request, timeout=0.1)
+    value_grade8, hit_grade8 = manager.get_cached_or_wait(
+        action_id=3, request_data=grade8_request, timeout=0.1
+    )
     assert hit_grade8 is False
     assert value_grade8 is None

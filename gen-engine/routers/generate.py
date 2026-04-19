@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
@@ -26,7 +27,7 @@ def _record_generate_metrics(
 ) -> None:
     """Best-effort Prometheus recording, kept local to avoid hard import coupling."""
     try:
-        from main import (  # type: ignore
+        from main import (
             CACHE_HITS,
             CACHE_MISSES,
             FALLBACK_EVENTS,
@@ -68,14 +69,16 @@ def _record_generate_metrics(
 @router.post(
     "/generate",
     response_model=GenerateResponse,
-    responses={204: {"description": "Hold-course (no content due to action_id=0 or hyperfocus protection)"}},
+    responses={
+        204: {"description": "Hold-course (no content due to action_id=0 or hyperfocus protection)"}
+    },
 )
-async def generate_content(request: GenerateRequest):
+async def generate_content(request: GenerateRequest) -> GenerateResponse | Response:
     """Main generation endpoint used by backend/orchestrator."""
     start = time.perf_counter()
 
     try:
-        routed = route_and_generate(request)
+        routed: dict[str, Any] = route_and_generate(request)
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         _record_generate_metrics(
@@ -138,12 +141,12 @@ async def generate_content(request: GenerateRequest):
 
 
 @router.post("/prefetch", status_code=202)
-async def prefetch_content(request: PrefetchRequest):
+async def prefetch_content(request: PrefetchRequest) -> dict[str, Any]:
     """Queue speculative generation tasks for top candidate actions."""
     result = start_prefetch(request)
 
     try:
-        from main import (  # type: ignore
+        from main import (
             PREFETCH_REQUESTS,
             PREFETCH_TASKS_QUEUED,
             PROMETHEUS_AVAILABLE,
@@ -168,7 +171,7 @@ async def prefetch_status(
     slide_content: str = Query(..., min_length=1),
     content_type: str | None = Query(default=None),
     learner_level: str | None = Query(default="grade8"),
-):
+) -> dict[str, Any]:
     """Check whether a prefetch candidate is ready."""
     return get_prefetch_status(
         action_id=action_id,

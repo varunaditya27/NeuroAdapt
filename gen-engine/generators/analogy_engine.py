@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List
+from typing import Any
 
 import requests
 
@@ -11,7 +11,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
 
 
-def _template_analogies(concept: str) -> List[dict]:
+def _template_analogies(concept: str) -> list[dict[str, Any]]:
     concept_title = concept.strip() or "this concept"
     return [
         {
@@ -49,7 +49,9 @@ def _template_analogies(concept: str) -> List[dict]:
     ]
 
 
-def _try_ollama(concept: str, slide_content: str, timeout_seconds: float = 2.8) -> List[dict] | None:
+def _try_ollama(
+    concept: str, slide_content: str, timeout_seconds: float = 2.8
+) -> list[dict[str, Any]] | None:
     prompt = (
         "Generate exactly 3 analogies for an educational concept."
         " Use three distinct domains: nature, sports, tech."
@@ -75,7 +77,7 @@ def _try_ollama(concept: str, slide_content: str, timeout_seconds: float = 2.8) 
 
         maybe = json.loads(payload)
         if isinstance(maybe, list) and len(maybe) >= 3:
-            cleaned = []
+            cleaned: list[dict[str, Any]] = []
             for idx, row in enumerate(maybe[:3], start=1):
                 cleaned.append(
                     {
@@ -97,7 +99,7 @@ def generate_analogies(
     concept: str,
     slide_content: str,
     learner_level: str = "grade8",
-) -> Dict:
+) -> dict[str, Any]:
     """Return 3 analogies in distinct domains."""
     concept_value = concept or "the concept"
     analogies = _try_ollama(concept_value, slide_content) or _template_analogies(concept_value)

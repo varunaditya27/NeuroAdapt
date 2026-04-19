@@ -4,24 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, List
+from typing import Any, List
 
+textstat: Any = None
 try:
-    import textstat  # type: ignore
+    import textstat as _textstat
 except Exception:  # pragma: no cover - optional runtime dependency
-    textstat = None
+    _textstat = None
+textstat = _textstat
 
+spacy: Any = None
+_spacy: Any = None
 try:
-    import spacy  # type: ignore
+    import spacy as _spacy
 except Exception:  # pragma: no cover - optional runtime dependency
-    spacy = None
+    _spacy = None
+spacy = _spacy
 
-_NLP = None
-_CACHE: Dict[str, dict] = {}
+_NLP: Any | None = None
+_CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_MAX = 500
 
 
-def _get_nlp():
+def _get_nlp() -> Any | None:
     global _NLP
     if _NLP is not None:
         return _NLP
@@ -112,7 +117,7 @@ def _enforce_min_chars(units: List[str], min_chars: int = 10) -> List[str]:
     return out
 
 
-def estimate_read_time_seconds(chunks: List[dict], wpm: int = 180) -> int:
+def estimate_read_time_seconds(chunks: List[dict[str, Any]], wpm: int = 180) -> int:
     words = sum(int(chunk.get("word_count", 0)) for chunk in chunks)
     return max(1, int((words / max(120, wpm)) * 60))
 
@@ -121,7 +126,7 @@ def chunk_text(
     text: str,
     chunk_strategy: str = "sentence",
     preserve_formatting: bool = True,
-) -> dict:
+) -> dict[str, Any]:
     """Split text into progressive chunks with readability metadata."""
     cleaned = text.strip()
     if not cleaned:
@@ -147,7 +152,7 @@ def chunk_text(
     if not preserve_formatting:
         units = [" ".join(u.split()) for u in units]
 
-    chunks: List[dict] = []
+    chunks: List[dict[str, Any]] = []
     for unit in units:
         words = unit.split()
         if not words:
