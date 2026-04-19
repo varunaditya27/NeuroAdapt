@@ -62,29 +62,55 @@ class PrefetchManager:
         normalized = self._CONTENT_TYPE_NORMALIZATION.get(str(content_type).strip().lower())
         return normalized or "auto"
 
+    def _normalize_learner_level(self, learner_level: Any) -> str:
+        if learner_level is None:
+            return "grade8"
+        value = str(learner_level).strip().lower()
+        if not value:
+            return "grade8"
+        return value
+
     def _make_key(
         self,
         session_id: str,
         action_id: int,
         slide_content: str,
+        learner_level: str | None = None,
         content_type: str | None = None,
     ) -> str:
         content_hash = hashlib.md5(slide_content.encode("utf-8")).hexdigest()
+        normalized_learner_level = self._normalize_learner_level(learner_level)
         normalized_content_type = self._normalize_content_type(content_type)
-        return f"{session_id}:{action_id}:{normalized_content_type}:{content_hash}"
+        return f"{session_id}:{action_id}:{normalized_learner_level}:{normalized_content_type}:{content_hash}"
 
     def _candidate_keys(
         self,
         session_id: str,
         action_id: int,
         slide_content: str,
+        learner_level: str | None = None,
         content_type: str | None = None,
     ) -> List[str]:
+        normalized_learner_level = self._normalize_learner_level(learner_level)
         normalized_content_type = self._normalize_content_type(content_type)
-        explicit = self._make_key(session_id, action_id, slide_content, normalized_content_type)
+        explicit = self._make_key(
+            session_id,
+            action_id,
+            slide_content,
+            normalized_learner_level,
+            normalized_content_type,
+        )
         keys = [explicit]
         if normalized_content_type != "auto":
-            keys.append(self._make_key(session_id, action_id, slide_content, None))
+            keys.append(
+                self._make_key(
+                    session_id,
+                    action_id,
+                    slide_content,
+                    normalized_learner_level,
+                    None,
+                )
+            )
         # Preserve order while removing duplicates.
         seen = set()
         deduped: List[str] = []
@@ -163,11 +189,18 @@ class PrefetchManager:
         actions = self._normalize_actions(action_candidates)[:2]
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
+        learner_level = request_data.get("learner_level")
         self._cleared_sessions.discard(session_id)
 
         for action_id in actions:
             content_type = request_data.get("content_type")
-            cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+            cache_keys = self._candidate_keys(
+                session_id,
+                action_id,
+                slide_content,
+                learner_level,
+                content_type,
+            )
             if not cache_keys:
                 continue
             future: Future | None = None
@@ -195,8 +228,9 @@ class PrefetchManager:
     def get_cached(self, action_id: int, request_data: dict) -> Optional[dict]:
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
+        learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
 
         with self._lock:
             self._prune_locked()
@@ -213,8 +247,9 @@ class PrefetchManager:
 
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
+        learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
 
         selected_key: str | None = None
         future: Future | None = None
@@ -257,8 +292,9 @@ class PrefetchManager:
     def get_status(self, action_id: int, request_data: dict) -> Dict[str, Any]:
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
+        learner_level = request_data.get("learner_level")
         content_type = request_data.get("content_type")
-        keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+        keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
 
         with self._lock:
             self._prune_locked()

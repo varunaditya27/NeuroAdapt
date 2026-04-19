@@ -173,15 +173,22 @@ def generate_manim_animation(
             "writer_attempts": 0,
             "reviewer_attempts": 0,
             "render_logs": None,
+            "generation_mode": "manim_generated_cache",
         }
 
     if shutil.which("manim") is None:
         fallback = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
         return {
             "video_url": None,
+            "duration_ms": 0,
             "image_url": fallback.get("image_url"),
             "warning": "Manim not installed; served static visual fallback.",
             "render_logs": "manim binary not available",
+            "writer_attempts": 0,
+            "reviewer_attempts": 0,
+            "cache_hit": False,
+            "generation_mode": "manim_fallback_static_image",
+            "fallback_stage": "manim_unavailable",
         }
 
     writer_system = _load_prompt(
@@ -240,15 +247,20 @@ def generate_manim_animation(
                 "writer_attempts": writer_attempts,
                 "reviewer_attempts": reviewer_attempts,
                 "render_logs": message,
+                "generation_mode": "manim_generated",
             }
         last_error = message
 
     fallback = generate_image(concept=concept, slide_content=slide_content, learner_level=learner_level)
     return {
         "video_url": None,
+        "duration_ms": 0,
         "image_url": fallback.get("image_url"),
         "warning": f"Manim failed after retries; static fallback used ({last_error}).",
         "writer_attempts": writer_attempts,
         "reviewer_attempts": reviewer_attempts,
         "render_logs": last_error,
+        "cache_hit": False,
+        "generation_mode": "manim_fallback_static_image",
+        "fallback_stage": "manim_retry_exhausted",
     }

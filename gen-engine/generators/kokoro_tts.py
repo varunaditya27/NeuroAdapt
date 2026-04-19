@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import wave
@@ -60,7 +61,7 @@ def extract_word_timestamps_with_confidence(audio_path: str, text: str | None = 
     try:
         response = requests.get(
             f"{_base_url()}/v1/audio/timestamps",
-            params={"audio_path": audio_path},
+            params={"audio_path": audio_path, "text": text or ""},
             timeout=2,
         )
         response.raise_for_status()
@@ -98,6 +99,46 @@ def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> Dict:
     }
 
 
+def _resolve_voice(voice_profile: str | None) -> tuple[str, str | None]:
+    default_voice = os.getenv("KOKORO_DEFAULT_VOICE", "af_bella")
+    if not voice_profile:
+        return default_voice, None
+
+    candidate = Path(voice_profile)
+    if candidate.exists() and candidate.is_file():
+        clone_name = f"clone_{candidate.stem[:24] or 'voice'}"
+        try:
+            payload = clone_voice_from_sample(str(candidate), voice_name=clone_name)
+            voice_id = payload.get("voice_id")
+            if isinstance(voice_id, str) and voice_id.strip():
+                return voice_id.strip(), None
+            return default_voice, "Voice clone endpoint returned no voice_id; using default voice."
+        except Exception as exc:
+            return default_voice, f"Voice cloning failed; using default voice ({exc})."
+
+    return voice_profile, None
+
+
+def _extract_wav_bytes(response: requests.Response) -> bytes:
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "application/json" not in content_type:
+        return response.content
+
+    payload = response.json()
+    for key in ("audio_base64", "audio", "audio_content"):
+        raw = payload.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return base64.b64decode(raw)
+
+    audio_url = payload.get("audio_url")
+    if isinstance(audio_url, str) and audio_url.strip():
+        follow = requests.get(audio_url, timeout=4)
+        follow.raise_for_status()
+        return follow.content
+
+    raise ValueError("Kokoro JSON response did not contain audio bytes")
+
+
 def generate_tts(
     text: str,
     voice_profile: str | None = None,
@@ -109,7 +150,7 @@ def generate_tts(
     if not text.strip():
         return {"audio_url": None, "word_timestamps": [], "warning": "No text provided for TTS."}
 
-    voice = voice_profile or os.getenv("KOKORO_DEFAULT_VOICE", "af_bella")
+    voice, voice_warning = _resolve_voice(voice_profile)
     speed_value = max(0.7, min(1.2, float(speed)))
 
     key = _cache_key(text, voice, speed_value)
@@ -118,7 +159,7 @@ def generate_tts(
     if wav_path.exists():
         duration_ms = _duration_from_wav(wav_path)
         timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
-        return {
+        payload = {
             "audio_url": str(wav_path),
             "duration_ms": duration_ms,
             "word_timestamps": timestamps,
@@ -126,6 +167,9 @@ def generate_tts(
             "voice_profile": voice,
             "cache_hit": True,
         }
+        if voice_warning:
+            payload["warning"] = voice_warning
+        return payload
 
     payload = {
         "model": "kokoro",
@@ -142,12 +186,12 @@ def generate_tts(
             timeout=float(os.getenv("LATENCY_BUDGET_AUDIO", "3")),
         )
         response.raise_for_status()
-        wav_path.write_bytes(response.content)
+        wav_path.write_bytes(_extract_wav_bytes(response))
 
         duration_ms = _duration_from_wav(wav_path)
         timestamps, timestamp_confidence = extract_word_timestamps_with_confidence(str(wav_path), text=text)
 
-        return {
+        result = {
             "audio_url": str(wav_path),
             "duration_ms": duration_ms,
             "word_timestamps": timestamps,
@@ -157,12 +201,18 @@ def generate_tts(
             "learner_id": learner_id,
             "session_id": session_id,
         }
+        if voice_warning:
+            result["warning"] = voice_warning
+        return result
     except Exception as exc:
+        warning = f"Kokoro unavailable; served text-only fallback ({exc})."
+        if voice_warning:
+            warning = f"{voice_warning} {warning}".strip()
         return {
             "audio_url": None,
             "duration_ms": 0,
             "word_timestamps": [],
             "timestamp_confidence": None,
             "voice_profile": voice,
-            "warning": f"Kokoro unavailable; served text-only fallback ({exc}).",
+            "warning": warning,
         }

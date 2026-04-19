@@ -209,6 +209,9 @@ def _generate_payload_for_action(action_id: int, request_data: dict) -> dict:
                 return {**anim_res, **audio_res}
 
             # animation function already returned fallback details
+            if anim_res.get("image_url") and not anim_res.get("audio_url"):
+                audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
+                return {**anim_res, **audio_res}
             return anim_res
 
         # default visual path (image)
@@ -361,11 +364,18 @@ def start_prefetch(prefetch_request: PrefetchRequest) -> Dict[str, Any]:
     }
 
 
-def get_prefetch_status(action_id: int, session_id: str, slide_content: str, content_type: str | None = None) -> Dict[str, Any]:
+def get_prefetch_status(
+    action_id: int,
+    session_id: str,
+    slide_content: str,
+    content_type: str | None = None,
+    learner_level: str | None = None,
+) -> Dict[str, Any]:
     request_data = {
         "session_id": session_id,
         "slide_content": slide_content,
         "content_type": content_type,
+        "learner_level": learner_level,
     }
     status = prefetch_manager.get_status(action_id, request_data)
     return {

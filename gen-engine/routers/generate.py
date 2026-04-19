@@ -140,7 +140,25 @@ async def generate_content(request: GenerateRequest):
 @router.post("/prefetch", status_code=202)
 async def prefetch_content(request: PrefetchRequest):
     """Queue speculative generation tasks for top candidate actions."""
-    return start_prefetch(request)
+    result = start_prefetch(request)
+
+    try:
+        from main import (  # type: ignore
+            PREFETCH_REQUESTS,
+            PREFETCH_TASKS_QUEUED,
+            PROMETHEUS_AVAILABLE,
+        )
+    except Exception:
+        return result
+
+    if PROMETHEUS_AVAILABLE:
+        started = bool(result.get("prefetch_started", False))
+        PREFETCH_REQUESTS.labels(status="started" if started else "noop").inc()
+        queued = int(result.get("tasks_queued", 0))
+        if queued > 0:
+            PREFETCH_TASKS_QUEUED.inc(queued)
+
+    return result
 
 
 @router.get("/prefetch/status")
@@ -149,6 +167,7 @@ async def prefetch_status(
     session_id: str = Query(..., min_length=1),
     slide_content: str = Query(..., min_length=1),
     content_type: str | None = Query(default=None),
+    learner_level: str | None = Query(default="grade8"),
 ):
     """Check whether a prefetch candidate is ready."""
     return get_prefetch_status(
@@ -156,4 +175,5 @@ async def prefetch_status(
         session_id=session_id,
         slide_content=slide_content,
         content_type=content_type,
+        learner_level=learner_level,
     )

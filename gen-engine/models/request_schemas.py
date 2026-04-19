@@ -133,7 +133,7 @@ class StateVector(BaseModel):
     Used by hyperfocus gate and orchestration logic.
     """
 
-    # Required fields (must be provided by orchestrator)
+    # Core required fields from orchestrator.
     cognitive_load: float = Field(
         ...,
         ge=0.0,
@@ -147,10 +147,10 @@ class StateVector(BaseModel):
         description="Number of regressions in current session"
     )
     hyperfocus_composite: float = Field(
-        ...,
+        default=0.0,
         ge=0.0,
         le=1.0,
-        description="Pre-computed hyperfocus composite score"
+        description="Optional pre-computed hyperfocus composite score (compatibility path)"
     )
 
     # Optional fields with defaults

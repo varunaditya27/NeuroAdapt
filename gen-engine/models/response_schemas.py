@@ -96,6 +96,8 @@ class ContentPayload(BaseModel):
     avatar_video_url: Optional[str] = Field(None, description="Generated avatar video URL")
     duration_ms: Optional[int] = Field(None, ge=0, description="Video duration in milliseconds")
     render_logs: Optional[str] = Field(None, description="Render diagnostics output for animation generation")
+    writer_attempts: Optional[int] = Field(None, ge=0, description="Writer attempt count for Manim generation")
+    reviewer_attempts: Optional[int] = Field(None, ge=0, description="Reviewer attempt count for Manim generation")
     generation_mode: Optional[str] = Field(None, description="Runtime generation mode (e.g., sd_generated, svg_fallback)")
     fallback_stage: Optional[str] = Field(None, description="Fallback stage identifier when degradation occurs")
     safety_prompt_applied: Optional[bool] = Field(None, description="Whether autism-safe prompt constraints were applied")
@@ -223,17 +225,50 @@ class ErrorResponse(BaseModel):
     )
 
 
+class ServiceHealth(BaseModel):
+    """Per-service health details returned by /health."""
+
+    status: str = Field(..., description="Service status (up/down)")
+    error: Optional[str] = Field(None, description="Last check error message, if any")
+    last_check: Optional[str] = Field(None, description="Last dependency probe timestamp (ISO 8601)")
+    checked_seconds_ago: Optional[float] = Field(None, ge=0.0, description="Seconds since last probe")
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        valid_statuses = ["up", "down"]
+        if v not in valid_statuses:
+            raise ValueError(f'Service status must be one of {valid_statuses}, got {v}')
+        return v
+
+
+class CacheHealth(BaseModel):
+    """Cache summary reported by /health."""
+
+    entries: int = Field(..., ge=0, description="Current cache entry count")
+    max_size: int = Field(..., ge=1, description="Configured maximum cache entry count")
+
+
+class PromptHealth(BaseModel):
+    """Prompt template loading summary reported by /health."""
+
+    loaded: int = Field(..., ge=0, description="Loaded prompt template count")
+    required: int = Field(..., ge=0, description="Required prompt template count")
+    missing_required: List[str] = Field(default_factory=list, description="Missing required prompt template names")
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint."""
 
     status: str = Field(..., description="Overall health status")
     timestamp: str = Field(..., description="Health check timestamp")
-    services: Dict[str, str] = Field(..., description="Service health status")
-    cache_entries: Optional[int] = Field(None, description="Current cache size")
-    cache_max_size: Optional[int] = Field(None, description="Maximum cache size")
-    uptime_seconds: Optional[int] = Field(None, description="Service uptime")
-    errors: Optional[List[str]] = Field(None, description="List of current errors")
-    version: str = Field(..., description="Service version")
+    ollama_reachable: bool = Field(..., description="Whether Ollama is currently reachable")
+    kokoro_reachable: bool = Field(..., description="Whether Kokoro TTS is currently reachable")
+    disk_space_gb: float = Field(..., ge=0.0, description="Free disk space in GB")
+    cache_size_mb: float = Field(..., ge=0.0, description="Generation cache footprint in MB")
+    services: Dict[str, ServiceHealth] = Field(..., description="Per-service health details")
+    cache: Optional[CacheHealth] = Field(None, description="In-memory cache summary")
+    prompts: Optional[PromptHealth] = Field(None, description="Prompt template readiness summary")
 
     @field_validator('status')
     @classmethod
@@ -244,14 +279,14 @@ class HealthResponse(BaseModel):
             raise ValueError(f'Status must be one of {valid_statuses}, got {v}')
         return v
 
-    @field_validator('services')
+    @field_validator('timestamp')
     @classmethod
-    def validate_services(cls, v: Dict[str, str]) -> Dict[str, str]:
-        """Ensure service statuses are valid."""
-        valid_service_statuses = ["ok", "warning", "failed"]
-        for service, status in v.items():
-            if status not in valid_service_statuses:
-                raise ValueError(f'Service {service} status must be one of {valid_service_statuses}, got {status}')
+    def validate_timestamp(cls, v: str) -> str:
+        """Ensure timestamp is valid ISO 8601."""
+        try:
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+        except ValueError as exc:
+            raise ValueError(f'Invalid ISO 8601 timestamp: {v}') from exc
         return v
 
     model_config = ConfigDict(
@@ -259,17 +294,27 @@ class HealthResponse(BaseModel):
             "example": {
                 "status": "healthy",
                 "timestamp": "2026-04-18T14:30:00Z",
+                "ollama_reachable": True,
+                "kokoro_reachable": True,
+                "disk_space_gb": 45.2,
+                "cache_size_mb": 1830,
                 "services": {
-                    "ollama": "ok",
-                    "kokoro_tts": "ok",
-                    "stable_diffusion": "ok",
-                    "disk_space": "ok",
-                    "memory": "ok"
+                    "Ollama": {
+                        "status": "up",
+                        "error": None,
+                        "last_check": "2026-04-18T14:29:59.000000",
+                        "checked_seconds_ago": 1.0
+                    }
                 },
-                "cache_entries": 5,
-                "cache_max_size": 100,
-                "uptime_seconds": 3600,
-                "version": "0.1.0"
+                "cache": {
+                    "entries": 5,
+                    "max_size": 100
+                },
+                "prompts": {
+                    "loaded": 7,
+                    "required": 7,
+                    "missing_required": []
+                }
             }
         }
     )
