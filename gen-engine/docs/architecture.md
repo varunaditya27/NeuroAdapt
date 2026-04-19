@@ -1,6 +1,6 @@
 # 🏗️ gen-engine Architecture
 
-**Last Updated:** April 16, 2026  
+**Last Updated:** April 19, 2026  
 **Owner:** Varun Aditya  
 **Status:** Design Locked, Implementation Phase 1
 
@@ -105,7 +105,7 @@ graph TD
 | Tier | Latency | Compute | Caching Strategy |
 |------|---------|---------|-----------------|
 | **Tier 1** | < 1s | Zero AI inference | Not cached — faster to regenerate |
-| **Tier 2** | 2-5s | Single LLM call | Cached per (action_id, slide_content) key |
+| **Tier 2** | 2-5s | Single LLM call | Cached per (session_id, action_id, learner_level, content_type, slide_content hash) |
 | **Tier 3** | 10-45s | Heavy (Manim render, SD, TTS) | Prefer prefetch; on-demand generation with timeout fallback on cache miss |
 
 ---
@@ -226,7 +226,7 @@ sequenceDiagram
 
     Note over ORC: Cycle N: computes Q-values
     ORC->>BE: Top-2 actions by Q-value:<br/>[action_id: 3, 2]
-    BE->>GE: POST /api/prefetch<br/>{action_candidates: [3, 2], slide_content}
+    BE->>GE: POST /api/prefetch<br/>{top_actions: [3, 2], slide_content, learner_level}
     GE->>PF: Start async generation for both
     
     par Background Task 1
@@ -268,22 +268,24 @@ class PrefetchManager:
         self.active_tasks: Dict[str, Future] = {}
         self.cleared_sessions: set[str] = set()
 
-    def _candidate_keys(self, session_id: str, action_id: int, slide_content: str, content_type: str | None):
+    def _candidate_keys(self, session_id: str, action_id: int, slide_content: str, learner_level: str | None, content_type: str | None):
         """
         Normalize content_type hints (`stem` -> `animation`, `visual` -> `image`) and
-        keep an `auto` alias key so prefetch and generate requests can match even when
+        include learner_level in keying to avoid cross-level cache contamination.
+        Keep an `auto` alias key so prefetch and generate requests can match even when
         one request provides content_type and the other omits it.
         """
+        level = normalize_learner_level(learner_level)  # grade5/grade8/university
         normalized = normalize_content_type(content_type)  # animation/image/audio/avatar/auto
-        keys = [f"{session_id}:{action_id}:{normalized}:{hash(slide_content)}"]
+        keys = [f"{session_id}:{action_id}:{level}:{normalized}:{hash(slide_content)}"]
         if normalized != "auto":
-            keys.append(f"{session_id}:{action_id}:auto:{hash(slide_content)}")
+            keys.append(f"{session_id}:{action_id}:{level}:auto:{hash(slide_content)}")
         return dedupe(keys)
     
-    def start_prefetch(self, action_candidates: list[int], slide_content: str, session_id: str):
+    def start_prefetch(self, action_candidates: list[int], slide_content: str, session_id: str, learner_level: str = "grade8", content_type: str | None = None):
         """Called when Orchestrator posts top-2 Q-values"""
         for action_id in action_candidates[:2]:  # Top 2 only
-            cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type=None)
+            cache_keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
 
             if any(key in self.cache for key in cache_keys):
                 continue  # Already cached
@@ -298,9 +300,9 @@ class PrefetchManager:
             for key in cache_keys:
                 self.active_tasks[key] = future
     
-    def get_cached_or_wait(self, action_id: int, slide_content: str, session_id: str, timeout: int = 30, content_type: str | None = None):
+    def get_cached_or_wait(self, action_id: int, slide_content: str, session_id: str, learner_level: str = "grade8", timeout: int = 30, content_type: str | None = None):
         """Called when action is confirmed — blocks until ready or timeout"""
-        cache_keys = self._candidate_keys(session_id, action_id, slide_content, content_type)
+        cache_keys = self._candidate_keys(session_id, action_id, slide_content, learner_level, content_type)
         
         # Immediate cache hit
         for key in cache_keys:
@@ -334,6 +336,15 @@ class PrefetchManager:
 - **TTL:** 10 minutes per entry (session likely to move to next slide)
 - **Size limit:** 100 entries max (oldest evicted first)
 - **Invalidation:** On session end, all entries for that session_id are cleared
+
+### Prefetch Status API
+
+`GET /api/prefetch/status` exposes prefetch readiness with deterministic states:
+- `ready` → cache entry exists and can be served immediately
+- `pending` → generation task still in-flight
+- `missing` → no cache/task match for the provided tuple
+
+Matching uses `(session_id, action_id, learner_level, content_type alias, slide_content hash)`.
 
 ---
 

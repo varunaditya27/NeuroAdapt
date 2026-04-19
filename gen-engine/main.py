@@ -65,6 +65,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 import requests
+from models.response_schemas import HealthResponse
 
 # ============================================================================
 # CONFIGURATION & LOGGING
@@ -170,6 +171,15 @@ if PROMETHEUS_AVAILABLE:
         'gen_engine_fk_verification_results_total',
         'FK verification outcomes for text simplification responses',
         ['target_level', 'result']
+    )
+    PREFETCH_REQUESTS = Counter(
+        'gen_engine_prefetch_requests_total',
+        'Total number of prefetch API requests',
+        ['status']
+    )
+    PREFETCH_TASKS_QUEUED = Counter(
+        'gen_engine_prefetch_tasks_queued_total',
+        'Total number of speculative tasks queued by prefetch requests'
     )
 
 # Global state (Phase 0: minimal)
@@ -340,7 +350,7 @@ async def root():
         "uptime_seconds": uptime,
     }
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Detailed health check endpoint for Kubernetes probes."""
     _refresh_services(force=False)

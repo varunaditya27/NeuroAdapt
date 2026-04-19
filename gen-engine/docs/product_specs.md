@@ -1,7 +1,7 @@
 # 📋 gen-engine Product Specifications
 
 **Version:** 1.0  
-**Last Updated:** April 16, 2026  
+**Last Updated:** April 19, 2026  
 **Owner:** Varun Aditya  
 **Status:** Design Locked, Implementation In Progress
 
@@ -335,6 +335,8 @@ The gen-engine microservice transforms educational content into neurodivergent-o
   - Timeout events by stage
   - FK verification outcomes (`met` / `missed` / `unknown`) by learner level
   - Hyperfocus override events
+  - Prefetch request outcomes (`started` / `noop`)
+  - Prefetch queued task count
   - Cache hit rate
 - **Logs:** Structured JSON logs (stdout) → collected by Promtail
 - **Tracing:** OpenTelemetry spans for request flow (Phase 3)
@@ -392,13 +394,17 @@ Notes:
   },
   "generation_time_ms": 2847,
   "cache_hit": false,
-  "hyperfocus_override": false
+  "hyperfocus_override": false,
+  "timestamp": "2026-04-19T10:25:11.123456Z",
+  "session_id": "uuid-v4",
+  "request_id": "req_1713517271123"
 }
 ```
 
 For degraded responses, `content` may include:
 - `fallback_stage` (e.g., `text_simplify_timeout`, `image_diffusion_failure`)
 - `generation_mode` (e.g., `text_fallback`, `svg_fallback`, `sd_generated`)
+- `writer_attempts`, `reviewer_attempts` (Manim generation diagnostics)
 - `safety_prompt_applied`, `safety_verified`, `safety_verification_method` (visual generation transparency)
 - `timestamp_confidence` (`high`/`heuristic`) for TTS word timings
 
@@ -417,11 +423,17 @@ Background generation for top-N action candidates.
 **Request:**
 ```json
 {
-  "action_candidates": [3, 2],
+  "top_actions": [3, 2],
   "slide_content": "Newton's first law states...",
-  "session_id": "uuid-v4"
+  "session_id": "uuid-v4",
+  "learner_level": "grade8",
+  "content_type": "stem"
 }
 ```
+
+Notes:
+- `action_candidates` is accepted as an alias for `top_actions`.
+- `learner_level` defaults to `grade8` when omitted.
 
 **Response (202 Accepted):**
 ```json
@@ -434,6 +446,38 @@ Background generation for top-N action candidates.
 
 ---
 
+### Endpoint: `GET /api/prefetch/status`
+
+Check whether prefetched content for a specific action is ready.
+
+**Query Parameters:**
+- `action_id` (required, int 0-5)
+- `session_id` (required, string)
+- `slide_content` (required, string)
+- `content_type` (optional, string)
+- `learner_level` (optional, string, defaults to `grade8`)
+
+**Response (200 OK):**
+```json
+{
+  "status": "ready",
+  "cache_hit": true,
+  "content": {
+    "video_url": "/tmp/animations/newton.mp4",
+    "audio_url": "/tmp/audio/newton.wav"
+  },
+  "action_id": 3,
+  "session_id": "uuid-v4"
+}
+```
+
+`status` is one of:
+- `ready` — cached content is available
+- `pending` — background task is still running
+- `missing` — no matching prefetch entry exists
+
+---
+
 ### Endpoint: `GET /health`
 
 Readiness probe for Kubernetes/Docker.
@@ -442,6 +486,7 @@ Readiness probe for Kubernetes/Docker.
 ```json
 {
   "status": "healthy",
+  "timestamp": "2026-04-19T10:25:11.123456",
   "ollama_reachable": true,
   "kokoro_reachable": true,
   "disk_space_gb": 45.2,
@@ -453,6 +498,15 @@ Readiness probe for Kubernetes/Docker.
       "checked_seconds_ago": 0.42,
       "error": null
     }
+  },
+  "cache": {
+    "entries": 5,
+    "max_size": 100
+  },
+  "prompts": {
+    "loaded": 7,
+    "required": 7,
+    "missing_required": []
   }
 }
 ```

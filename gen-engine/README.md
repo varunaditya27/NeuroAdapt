@@ -366,6 +366,13 @@ For prefetch-heavy requests, wait tuning can be adjusted via env vars:
 - `PREFETCH_WAIT_SECONDS_ACTION3` (heavier visual/audio path)
 - `PREFETCH_WAIT_SECONDS_ACTION4` (quiz path)
 
+Prefetch cache matching uses:
+- `session_id`
+- `action_id`
+- `learner_level`
+- normalized `content_type` (with `auto` alias fallback)
+- hash of `slide_content`
+
 ---
 
 ## 💰 The Cost Gate
@@ -467,6 +474,49 @@ Generate content in target format based on action_id.
 **Compatibility notes:**
 - `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
 - `concept_id` is accepted as an alias for `concept`.
+
+### `POST /api/prefetch`
+
+Queue speculative generation for top candidates.
+
+```json
+{
+    "top_actions": [3, 2],
+    "session_id": "uuid-string",
+    "slide_content": "Newton's first law states...",
+    "learner_level": "grade8",
+    "content_type": "stem"
+}
+```
+
+Alias support:
+- `action_candidates` is accepted as an alias for `top_actions`.
+
+### `GET /api/prefetch/status`
+
+Read prefetch readiness for a specific action/content tuple.
+
+Query params:
+- `action_id` (required)
+- `session_id` (required)
+- `slide_content` (required)
+- `content_type` (optional)
+- `learner_level` (optional, default `grade8`)
+
+```json
+{
+    "status": "ready",
+    "cache_hit": true,
+    "content": {
+        "video_url": "/tmp/animations/newton.mp4",
+        "audio_url": "/tmp/audio/newton.wav"
+    },
+    "action_id": 3,
+    "session_id": "uuid-string"
+}
+```
+
+`status` values: `ready`, `pending`, `missing`.
 
 ### `GET /health`
 
