@@ -36,8 +36,7 @@ ENVIRONMENT VARIABLES:
 KEY FUNCTIONS:
     - app.get("/health") : Health check endpoint
     - app.post("/api/generate") : Main content generation endpoint
-    - app.on_event("startup") : Initialize all generators
-    - app.on_event("shutdown") : Clean up resources
+    - app lifespan : Initialize all generators and clean up resources
 
 INTEGRATION POINTS:
     - Backend (NeuroAdapt orchestrator) sends POST requests to /api/generate
@@ -56,6 +55,7 @@ import os
 import sys
 import logging
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
 import time
@@ -115,6 +115,51 @@ except ImportError:
 from routers import generate, health
 from orchestration.prefetch_manager import prefetch_manager
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Run startup and shutdown logic via FastAPI lifespan hooks."""
+    logger.info("=" * 80)
+    logger.info("gen-engine STARTING UP")
+    logger.info("=" * 80)
+
+    app_state["startup_time"] = datetime.now()
+
+    _refresh_services(force=True)
+    for service_name, service_info in app_state["services"].items():
+        is_available = bool(service_info.get("available"))
+        error = service_info.get("error")
+
+        if is_available:
+            logger.info(f"✓ {service_name} is available")
+        else:
+            logger.warning(f"✗ {service_name} unavailable: {error} (will degrade gracefully)")
+
+    app_state["prompts"] = load_prompts()
+    logger.info(f"✓ Loaded {len(app_state['prompts'])} prompt templates")
+
+    missing_required_prompts = [
+        prompt_name for prompt_name in REQUIRED_PROMPTS if prompt_name not in app_state["prompts"]
+    ]
+    app_state["prompt_health"] = {"missing_required": missing_required_prompts}
+    if missing_required_prompts:
+        logger.warning("✗ Missing required prompt templates: %s", ", ".join(missing_required_prompts))
+    else:
+        logger.info("✓ All required prompt templates present")
+
+    app_state["cache"] = {}
+    logger.info(f"✓ Cache initialized (max size: {CONFIG['CACHE_MAX_SIZE']})")
+
+    logger.info("=" * 80)
+    logger.info("gen-engine READY")
+    logger.info("=" * 80)
+
+    try:
+        yield
+    finally:
+        logger.info("gen-engine shutting down")
+        app_state["cache"].clear()
+
 # ============================================================================
 # FASTAPI APP INITIALIZATION
 # ============================================================================
@@ -123,6 +168,7 @@ app = FastAPI(
     title="gen-engine",
     version="0.1.0",
     description="Generative Synthesis Engine for neurodivergent content adaptation",
+    lifespan=lifespan,
 )
 
 # Prometheus metrics
@@ -286,56 +332,6 @@ def _refresh_services(force: bool = False) -> None:
         }
 
 # ============================================================================
-# STARTUP & SHUTDOWN EVENTS
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup."""
-    logger.info("=" * 80)
-    logger.info("gen-engine STARTING UP")
-    logger.info("=" * 80)
-    
-    app_state["startup_time"] = datetime.now()
-    
-    _refresh_services(force=True)
-    for service_name, service_info in app_state["services"].items():
-        is_available = bool(service_info.get("available"))
-        error = service_info.get("error")
-
-        if is_available:
-            logger.info(f"✓ {service_name} is available")
-        else:
-            logger.warning(f"✗ {service_name} unavailable: {error} (will degrade gracefully)")
-    
-    # Load prompt templates
-    app_state["prompts"] = load_prompts()
-    logger.info(f"✓ Loaded {len(app_state['prompts'])} prompt templates")
-
-    missing_required_prompts = [
-        prompt_name for prompt_name in REQUIRED_PROMPTS if prompt_name not in app_state["prompts"]
-    ]
-    app_state["prompt_health"] = {"missing_required": missing_required_prompts}
-    if missing_required_prompts:
-        logger.warning("✗ Missing required prompt templates: %s", ", ".join(missing_required_prompts))
-    else:
-        logger.info("✓ All required prompt templates present")
-    
-    # Initialize cache
-    app_state["cache"] = {}
-    logger.info(f"✓ Cache initialized (max size: {CONFIG['CACHE_MAX_SIZE']})")
-    
-    logger.info("=" * 80)
-    logger.info("gen-engine READY")
-    logger.info("=" * 80)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("gen-engine shutting down")
-    app_state["cache"].clear()
-
-# ============================================================================
 # ROUTES
 # ============================================================================
 
@@ -437,7 +433,9 @@ app.include_router(health.router, tags=["health"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        # Pass the in-process app object directly so `python main.py` does not
+        # import this module a second time and double-register Prometheus metrics.
+        app,
         host="0.0.0.0",
         port=8001,
         reload=False,

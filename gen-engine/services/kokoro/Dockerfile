@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
 	espeak-ng \
 	&& rm -rf /var/lib/apt/lists/*
 
-# Install FastAPI and Uvicorn
-RUN pip install --no-cache-dir fastapi uvicorn
+# Install FastAPI, Uvicorn, and multipart support for form/file uploads
+RUN pip install --no-cache-dir fastapi uvicorn python-multipart
 
 # Copy application
 COPY main.py .
