@@ -14,15 +14,28 @@ from orchestration.action_router import get_prefetch_status, route_and_generate,
 router = APIRouter()
 
 
-def _record_generate_metrics(action_id: int, status: str, generation_time_ms: int, cache_hit: bool) -> None:
+def _record_generate_metrics(
+    action_id: int,
+    status: str,
+    generation_time_ms: int,
+    cache_hit: bool,
+    fallback_stage: str | None = None,
+    hyperfocus_override: bool = False,
+    learner_level: str | None = None,
+    fk_result: str | None = None,
+) -> None:
     """Best-effort Prometheus recording, kept local to avoid hard import coupling."""
     try:
         from main import (  # type: ignore
             CACHE_HITS,
             CACHE_MISSES,
+            FALLBACK_EVENTS,
+            FK_VERIFICATION_RESULTS,
+            HYPERFOCUS_OVERRIDES,
             PROMETHEUS_AVAILABLE,
             REQUEST_COUNT,
             REQUEST_LATENCY,
+            TIMEOUT_EVENTS,
         )
     except Exception:
         return
@@ -38,6 +51,18 @@ def _record_generate_metrics(action_id: int, status: str, generation_time_ms: in
         CACHE_HITS.labels(action_id=action).inc()
     else:
         CACHE_MISSES.labels(action_id=action).inc()
+
+    if fallback_stage:
+        stage = str(fallback_stage)
+        FALLBACK_EVENTS.labels(action_id=action, stage=stage).inc()
+        if "timeout" in stage:
+            TIMEOUT_EVENTS.labels(action_id=action, stage=stage).inc()
+
+    if hyperfocus_override:
+        HYPERFOCUS_OVERRIDES.labels(reason="hyperfocus_gate").inc()
+
+    if fk_result and learner_level:
+        FK_VERIFICATION_RESULTS.labels(target_level=str(learner_level), result=str(fk_result)).inc()
 
 
 @router.post(
@@ -68,11 +93,23 @@ async def generate_content(request: GenerateRequest):
             status="no_content",
             generation_time_ms=elapsed_ms,
             cache_hit=False,
+            hyperfocus_override=bool(routed.get("hyperfocus_override", False)),
         )
         return Response(status_code=204)
 
     generation_time_ms = int((time.perf_counter() - start) * 1000)
     payload = routed.get("content", {})
+    learner_level = str(getattr(request.learner_level, "value", request.learner_level))
+
+    fk_result: str | None = None
+    if int(routed.get("action_id", request.action_id)) == 2:
+        target_by_level = {"grade5": 6.0, "grade8": 9.0, "university": 13.0}
+        target = target_by_level.get(learner_level, 9.0)
+        fk_grade = payload.get("fk_grade")
+        if isinstance(fk_grade, (int, float)):
+            fk_result = "met" if float(fk_grade) <= target else "missed"
+        else:
+            fk_result = "unknown"
 
     response = GenerateResponse(
         action_id=int(routed.get("action_id", request.action_id)),
@@ -92,6 +129,9 @@ async def generate_content(request: GenerateRequest):
         status="success",
         generation_time_ms=generation_time_ms,
         cache_hit=response.cache_hit,
+        fallback_stage=payload.get("fallback_stage"),
+        learner_level=learner_level,
+        fk_result=fk_result,
     )
 
     return response

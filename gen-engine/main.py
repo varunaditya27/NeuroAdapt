@@ -81,6 +81,21 @@ CONFIG = {
     "CACHE_TTL_SECONDS": int(os.getenv("CACHE_TTL_SECONDS", "600")),
 }
 
+SERVICE_CHECKS = [
+    ("Ollama", f"{CONFIG['OLLAMA_URL']}/api/tags"),
+    ("Kokoro TTS", f"{CONFIG['KOKORO_TTS_URL']}/health"),
+]
+HEALTH_REFRESH_INTERVAL_SECONDS = max(1.0, float(os.getenv("HEALTH_REFRESH_INTERVAL_SECONDS", "5")))
+REQUIRED_PROMPTS = [
+    "simplify_grade5",
+    "simplify_grade8",
+    "simplify_university",
+    "manim_expert",
+    "manim_reviewer",
+    "image_gen_base",
+    "analogy_generator",
+]
+
 logging.basicConfig(
     level=getattr(logging, CONFIG["LOG_LEVEL"]),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -136,11 +151,32 @@ if PROMETHEUS_AVAILABLE:
         'gen_engine_cache_size',
         'Current cache size'
     )
+    FALLBACK_EVENTS = Counter(
+        'gen_engine_fallback_events_total',
+        'Total fallback events emitted by generation flows',
+        ['action_id', 'stage']
+    )
+    TIMEOUT_EVENTS = Counter(
+        'gen_engine_timeout_events_total',
+        'Total timeout-triggered degradation events',
+        ['action_id', 'stage']
+    )
+    HYPERFOCUS_OVERRIDES = Counter(
+        'gen_engine_hyperfocus_overrides_total',
+        'Total no-content responses caused by hyperfocus protection',
+        ['reason']
+    )
+    FK_VERIFICATION_RESULTS = Counter(
+        'gen_engine_fk_verification_results_total',
+        'FK verification outcomes for text simplification responses',
+        ['target_level', 'result']
+    )
 
 # Global state (Phase 0: minimal)
 app_state = {
     "cache": {},
     "prompts": {},
+    "prompt_health": {"missing_required": []},
     "services": {},
     "startup_time": None,
 }
@@ -156,7 +192,9 @@ def verify_service(service_name: str, url: str, timeout: int = 2) -> Tuple[bool,
     """
     try:
         response = requests.get(url, timeout=timeout)
-        return True, None
+        if 200 <= response.status_code < 400:
+            return True, None
+        return False, f"HTTP {response.status_code}"
     except requests.exceptions.Timeout:
         return False, f"Timeout after {timeout}s"
     except requests.exceptions.ConnectionError:
@@ -199,6 +237,44 @@ def _directory_size_mb(path: Path) -> float:
 
     return round(total_bytes / (1024 * 1024), 1)
 
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def _refresh_services(force: bool = False) -> None:
+    """Refresh dependency reachability with optional throttling."""
+    now = datetime.now()
+    services = app_state.setdefault("services", {})
+
+    for service_name, service_url in SERVICE_CHECKS:
+        existing = services.get(service_name) or {}
+        should_check = force
+
+        if not should_check:
+            last_check = _parse_iso_datetime(existing.get("last_check"))
+            if last_check is None:
+                should_check = True
+            else:
+                age = (now - last_check).total_seconds()
+                should_check = age >= HEALTH_REFRESH_INTERVAL_SECONDS
+
+        if not should_check:
+            continue
+
+        is_available, error = verify_service(service_name, service_url)
+        services[service_name] = {
+            "available": is_available,
+            "url": service_url,
+            "last_check": now.isoformat(),
+            "error": error if not is_available else None,
+        }
+
 # ============================================================================
 # STARTUP & SHUTDOWN EVENTS
 # ============================================================================
@@ -212,21 +288,11 @@ async def startup_event():
     
     app_state["startup_time"] = datetime.now()
     
-    # Verify external services
-    services_to_check = [
-        ("Ollama", CONFIG["OLLAMA_URL"] + "/api/tags"),
-        ("Kokoro TTS", CONFIG["KOKORO_TTS_URL"] + "/health"),
-    ]
-    
-    for service_name, service_url in services_to_check:
-        is_available, error = verify_service(service_name, service_url)
-        app_state["services"][service_name] = {
-            "available": is_available,
-            "url": service_url,
-            "last_check": datetime.now().isoformat(),
-            "error": error if not is_available else None,
-        }
-        
+    _refresh_services(force=True)
+    for service_name, service_info in app_state["services"].items():
+        is_available = bool(service_info.get("available"))
+        error = service_info.get("error")
+
         if is_available:
             logger.info(f"✓ {service_name} is available")
         else:
@@ -235,6 +301,15 @@ async def startup_event():
     # Load prompt templates
     app_state["prompts"] = load_prompts()
     logger.info(f"✓ Loaded {len(app_state['prompts'])} prompt templates")
+
+    missing_required_prompts = [
+        prompt_name for prompt_name in REQUIRED_PROMPTS if prompt_name not in app_state["prompts"]
+    ]
+    app_state["prompt_health"] = {"missing_required": missing_required_prompts}
+    if missing_required_prompts:
+        logger.warning("✗ Missing required prompt templates: %s", ", ".join(missing_required_prompts))
+    else:
+        logger.info("✓ All required prompt templates present")
     
     # Initialize cache
     app_state["cache"] = {}
@@ -268,14 +343,24 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check endpoint for Kubernetes probes."""
+    _refresh_services(force=False)
+
     services_status = {}
     
     # Check service status but don't fail if they're unavailable
     # (gen-engine can degrade gracefully)
     for service_name, service_info in app_state["services"].items():
+        last_check = service_info.get("last_check")
+        age_seconds = None
+        parsed_check = _parse_iso_datetime(last_check)
+        if parsed_check is not None:
+            age_seconds = round(max(0.0, (datetime.now() - parsed_check).total_seconds()), 2)
+
         services_status[service_name] = {
             "status": "up" if service_info["available"] else "down",
             "error": service_info["error"],
+            "last_check": last_check,
+            "checked_seconds_ago": age_seconds,
         }
 
     ollama_reachable = bool(app_state["services"].get("Ollama", {}).get("available", False))
@@ -301,6 +386,11 @@ async def health_check():
             "cache": {
                 "entries": len(app_state["cache"]),
                 "max_size": CONFIG["CACHE_MAX_SIZE"],
+            },
+            "prompts": {
+                "loaded": len(app_state.get("prompts", {})),
+                "required": len(REQUIRED_PROMPTS),
+                "missing_required": app_state.get("prompt_health", {}).get("missing_required", []),
             },
         },
     )

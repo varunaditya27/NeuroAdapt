@@ -96,10 +96,16 @@ class ContentPayload(BaseModel):
     avatar_video_url: Optional[str] = Field(None, description="Generated avatar video URL")
     duration_ms: Optional[int] = Field(None, ge=0, description="Video duration in milliseconds")
     render_logs: Optional[str] = Field(None, description="Render diagnostics output for animation generation")
+    generation_mode: Optional[str] = Field(None, description="Runtime generation mode (e.g., sd_generated, svg_fallback)")
+    fallback_stage: Optional[str] = Field(None, description="Fallback stage identifier when degradation occurs")
+    safety_prompt_applied: Optional[bool] = Field(None, description="Whether autism-safe prompt constraints were applied")
+    safety_verified: Optional[bool] = Field(None, description="Whether output passed explicit post-generation safety verification")
+    safety_verification_method: Optional[str] = Field(None, description="Safety verification method used")
 
     # Audio generation (action_id=3)
     audio_url: Optional[str] = Field(None, description="Generated audio URL")
     word_timestamps: Optional[List[WordTimestamp]] = Field(None, description="Per-word timing for dyslexia support")
+    timestamp_confidence: Optional[str] = Field(None, description="Timestamp confidence label (high/heuristic)")
 
     # Typography morphing (all actions)
     css_variables: Optional[CSSVariables] = Field(None, description="Typography CSS variables")

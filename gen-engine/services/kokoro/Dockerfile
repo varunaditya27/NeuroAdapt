@@ -2,8 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl for health checks and espeak-ng for local audible synthesis
+RUN apt-get update && apt-get install -y \
+	curl \
+	espeak-ng \
+	&& rm -rf /var/lib/apt/lists/*
 
 # Install FastAPI and Uvicorn
 RUN pip install --no-cache-dir fastapi uvicorn
