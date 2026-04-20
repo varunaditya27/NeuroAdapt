@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { STATE_VECTOR_DIM, TELEMETRY_INTERVAL } from '../shared_config.js';
 
 /**
@@ -34,7 +35,7 @@ function clamp(value, min = 0, max = 1) {
  */
 function getSessionId() {
   if (!sessionId) {
-    sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    sessionId = `session_${uuidv4()}`;
   }
   return sessionId;
 }
@@ -281,6 +282,3 @@ function destroy() {
 
 // Named exports
 export { init, flush, setPreferenceDelta, destroy };
-
-// Default export for convenience
-export default { init, flush, setPreferenceDelta, destroy };

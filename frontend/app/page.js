@@ -7,6 +7,7 @@ export default function Home() {
   const [stateVector, setStateVector] = useState(null);
   const [lastPostTime, setLastPostTime] = useState(null);
   const [observerActive, setObserverActive] = useState(false);
+  const [activeModuleId, setActiveModuleId] = useState(1);
 
   useEffect(() => {
     // Initialize Observer on mount
@@ -38,11 +39,11 @@ export default function Home() {
   };
 
   const modules = [
-    { id: 1, name: 'Intro to Quantum Computing', active: true },
-    { id: 2, name: 'Superposition & Entanglement', active: false },
-    { id: 3, name: 'Quantum Gates', active: false },
-    { id: 4, name: 'Quantum Algorithms', active: false },
-    { id: 5, name: 'Real Applications', active: false },
+    { id: 1, name: 'Intro to Quantum Computing' },
+    { id: 2, name: 'Superposition & Entanglement' },
+    { id: 3, name: 'Quantum Gates' },
+    { id: 4, name: 'Quantum Algorithms' },
+    { id: 5, name: 'Real Applications' },
   ];
 
   const progress = 33; // TODO: Wire to real data
@@ -111,22 +112,41 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {modules.map((mod) => (
-              <div
+              <button
                 key={mod.id}
+                type="button"
+                onClick={() => {
+                  console.log('Module switched to:', mod.name);
+                  setActiveModuleId(mod.id);
+                }}
                 style={{
                   padding: '10px 12px',
-                  borderLeft: mod.active ? '3px solid var(--teal)' : '3px solid transparent',
-                  paddingLeft: mod.active ? '9px' : '12px',
-                  color: mod.active ? 'var(--navy)' : 'var(--muted)',
+                  borderLeft: activeModuleId === mod.id ? '3px solid var(--teal)' : '3px solid transparent',
+                  paddingLeft: activeModuleId === mod.id ? '9px' : '12px',
+                  color: activeModuleId === mod.id ? 'var(--navy)' : 'var(--muted)',
                   fontSize: '13px',
-                  fontWeight: mod.active ? 500 : 400,
-                  cursor: mod.active ? 'default' : 'not-allowed',
-                  opacity: mod.active ? 1 : 0.6,
+                  fontWeight: activeModuleId === mod.id ? 500 : 400,
+                  cursor: 'pointer',
+                  opacity: 1,
                   transition: 'all 200ms ease',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  textAlign: 'left',
+                  pointerEvents: 'auto',
+                }}
+                onMouseEnter={(e) => {
+                  if (activeModuleId !== mod.id) {
+                    e.currentTarget.style.color = 'var(--navy)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeModuleId !== mod.id) {
+                    e.currentTarget.style.color = 'var(--muted)';
+                  }
                 }}
               >
                 {mod.name}
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -227,6 +247,8 @@ export default function Home() {
             {/* Navigation Buttons */}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '48px' }}>
               <button
+                type="button"
+                onClick={() => console.log('Previous clicked')}
                 style={{
                   padding: '10px 20px',
                   border: '1px solid var(--navy)',
@@ -237,18 +259,20 @@ export default function Home() {
                   fontWeight: 500,
                   cursor: 'pointer',
                   transition: 'all 200ms ease',
+                  pointerEvents: 'auto',
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
+                  e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.backgroundColor = 'transparent';
                 }}
-                disabled
               >
                 ← Previous
               </button>
               <button
+                type="button"
+                onClick={() => console.log('Next clicked')}
                 style={{
                   padding: '10px 20px',
                   border: 'none',
@@ -259,14 +283,14 @@ export default function Home() {
                   fontWeight: 500,
                   cursor: 'pointer',
                   transition: 'all 200ms ease',
+                  pointerEvents: 'auto',
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.opacity = '0.9';
+                  e.currentTarget.style.opacity = '0.9';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.opacity = '1';
+                  e.currentTarget.style.opacity = '1';
                 }}
-                disabled
               >
                 Next →
               </button>
