@@ -13,8 +13,3 @@ quantum/checkpoints/*.pt
 quantum/checkpoints/*_history.json
 quantum/ablation_c_smoke.png
 
-# Planning and local task tracking artifacts
-plan.md
-Sudarshan_Tasks.md
-tasks/lessons.md
-tasks/todo.md
