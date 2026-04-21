@@ -267,6 +267,23 @@ class GenerateRequest(BaseModel):
     state_vector: StateVector = Field(..., description="Real-time learner state information")
 
     # Optional fields
+    learner_id: Optional[UUID] = Field(
+        None,
+        description="Optional learner identifier used by mastery/TTS/avatar generators",
+    )
+    voice_profile: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "Optional voice profile selector or base64-encoded 10s WAV sample used for Kokoro"
+        ),
+    )
+    source_image: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=2048,
+        description="Optional source image path/URL hint for avatar generation",
+    )
     learner_profile: Optional[LearnerProfile] = Field(
         None, description="Learner-specific preferences and accommodations"
     )
@@ -306,6 +323,9 @@ class GenerateRequest(BaseModel):
                 "learner_level": "grade8",
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
                 "confidence": 0.85,
+                "learner_id": "2f5671d2-4b0f-4ef2-a93d-d4e47a4a147f",
+                "voice_profile": "af_bella",
+                "source_image": "/tmp/avatar_source.png",
                 "state_vector": {
                     "cognitive_load": 0.7,
                     "regression_count": 3,

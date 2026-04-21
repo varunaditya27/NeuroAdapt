@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import html
 import hashlib
 import os
 from pathlib import Path
 from typing import Any
+
+from PIL import ImageStat
 
 AUTISM_SAFE_NEGATIVE_PROMPT = (
     "high contrast, cluttered, busy background, neon colors, flashing elements, "
@@ -55,7 +58,7 @@ def _build_prompt(concept: str, slide_content: str, learner_level: str) -> str:
 
 
 def _write_svg_placeholder(file_path: Path, concept: str) -> None:
-    safe_text = (concept or "Concept Illustration").replace("&", "and").replace("<", "")
+    safe_text = html.escape((concept or "Concept Illustration")[:54])
     svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='768' height='512' viewBox='0 0 768 512'>
   <rect width='100%' height='100%' fill='#F9F7F0'/>
   <rect x='84' y='96' width='600' height='320' rx='24' fill='#A8DADC' opacity='0.65'/>
@@ -69,6 +72,35 @@ def _write_svg_placeholder(file_path: Path, concept: str) -> None:
   </text>
 </svg>"""
     file_path.write_text(svg, encoding="utf-8")
+
+
+def _verify_generated_image_safety(image: Any) -> tuple[bool, str, str]:
+    """Heuristic post-check for autism-safe visual constraints."""
+    try:
+        rgb = image.convert("RGB")
+        hsv = rgb.convert("HSV")
+
+        rgb_stats = ImageStat.Stat(rgb)
+        hsv_stats = ImageStat.Stat(hsv)
+
+        max_stddev = max(float(value) for value in rgb_stats.stddev)
+        avg_saturation = float(hsv_stats.mean[1]) / 255.0
+        entropy = float(rgb.entropy())
+
+        violations: list[str] = []
+        if max_stddev > 82.0:
+            violations.append("contrast")
+        if avg_saturation > 0.62:
+            violations.append("saturation")
+        if entropy > 7.3:
+            violations.append("visual_complexity")
+
+        if violations:
+            return False, "heuristic_postcheck", ",".join(violations)
+
+        return True, "heuristic_postcheck", "passed"
+    except Exception as exc:
+        return False, "heuristic_postcheck", f"verification_error:{exc}"
 
 
 def _load_diffusion_pipeline() -> Any | None:
@@ -112,8 +144,8 @@ def generate_image(
             "width": 512,
             "height": 512,
             "safety_prompt_applied": True,
-            "safety_verified": False,
-            "safety_verification_method": "not_performed",
+            "safety_verified": True,
+            "safety_verification_method": "heuristic_postcheck_cached",
             "generation_mode": "sd_generated_cache",
             "cache_hit": True,
         }
@@ -145,6 +177,27 @@ def generate_image(
                 height=512,
                 width=512,
             ).images[0]
+
+            is_safe, method, reason = _verify_generated_image_safety(image)
+            if not is_safe:
+                _write_svg_placeholder(svg_path, concept)
+                return {
+                    "image_url": str(svg_path),
+                    "format": "svg",
+                    "width": 768,
+                    "height": 512,
+                    "safety_prompt_applied": True,
+                    "safety_verified": False,
+                    "safety_verification_method": method,
+                    "generation_mode": "svg_fallback",
+                    "fallback_stage": "image_safety_filter",
+                    "cache_hit": False,
+                    "warning": (
+                        "Generated image failed autism-safe post-check; served calm SVG fallback "
+                        f"({reason})."
+                    ),
+                }
+
             image.save(png_path)
             return {
                 "image_url": str(png_path),
@@ -152,8 +205,8 @@ def generate_image(
                 "width": 512,
                 "height": 512,
                 "safety_prompt_applied": True,
-                "safety_verified": False,
-                "safety_verification_method": "prompt_only",
+                "safety_verified": True,
+                "safety_verification_method": method,
                 "generation_mode": "sd_generated",
                 "cache_hit": False,
                 "prompt_used": prompt,

@@ -16,12 +16,12 @@ spacy==3.8.2
 en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 # ── Image Generation ─────────────────────────────────────────────
-# torch==2.4.1                     # 2.5.0 has a known metadata conflict with transformers 4.46.x
-# torchvision==0.19.1              # must match torch minor version exactly
-# transformers==4.46.3             # 4.46.0 has a tokenizer regression; use .3
-# diffusers==0.30.3                # 0.31.0 requires transformers>=4.47 which conflicts above
-# accelerate==1.1.1                # required by diffusers pipeline; omitting causes runtime crash
-# Pillow==10.4.0                   # Pillow 11.x breaks torchvision's image transforms
+torch==2.4.1                     # 2.5.0 has a known metadata conflict with transformers 4.46.x
+torchvision==0.19.1              # must match torch minor version exactly
+transformers==4.46.3             # 4.46.0 has a tokenizer regression; use .3
+diffusers==0.30.3                # 0.31.0 requires transformers>=4.47 which conflicts above
+accelerate==1.1.1                # required by diffusers pipeline; omitting causes runtime crash
+Pillow==10.4.0                   # Pillow 11.x breaks torchvision's image transforms
 
 # ── Audio ────────────────────────────────────────────────────────
 pydub==0.25.1

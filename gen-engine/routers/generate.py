@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import time
+from uuid import uuid4
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +15,7 @@ from models.response_schemas import ContentPayload, GenerateResponse
 from orchestration.action_router import get_prefetch_status, route_and_generate, start_prefetch
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _record_generate_metrics(
@@ -79,7 +82,7 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse | Respo
 
     try:
         routed: dict[str, Any] = route_and_generate(request)
-    except Exception as exc:
+    except Exception:
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         _record_generate_metrics(
             action_id=int(request.action_id),
@@ -87,7 +90,8 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse | Respo
             generation_time_ms=elapsed_ms,
             cache_hit=False,
         )
-        raise HTTPException(status_code=500, detail=f"Generation routing failed: {exc}") from exc
+        logger.exception("Generation routing failed")
+        raise HTTPException(status_code=500, detail="Generation routing failed")
 
     if routed.get("no_content"):
         elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -124,7 +128,7 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse | Respo
         warning=routed.get("warning"),
         timestamp=datetime.utcnow().isoformat() + "Z",
         session_id=str(request.session_id),
-        request_id=request.request_id or f"req_{int(time.time() * 1000)}",
+        request_id=request.request_id or f"req_{uuid4().hex}",
     )
 
     _record_generate_metrics(

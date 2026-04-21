@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import os
 import re
@@ -33,6 +34,27 @@ def _resolve_video_dir() -> Path:
 
 _VIDEO_DIR = _resolve_video_dir()
 
+_ALLOWED_IMPORT_ROOTS = {"manim", "math", "numpy", "np"}
+_DISALLOWED_CALL_NAMES = {
+    "eval",
+    "exec",
+    "compile",
+    "open",
+    "__import__",
+    "input",
+}
+_DISALLOWED_ATTR_CALLS = {
+    "system",
+    "popen",
+    "run",
+    "call",
+    "check_call",
+    "check_output",
+    "unlink",
+    "remove",
+    "rmtree",
+}
+
 
 def _load_prompt(filename: str, fallback: str) -> str:
     file_path = PROMPTS_DIR / filename
@@ -42,7 +64,7 @@ def _load_prompt(filename: str, fallback: str) -> str:
 
 
 def _default_scene_code(concept: str) -> str:
-    title = (concept or "Concept").replace('"', "")
+    title = re.sub(r"[^A-Za-z0-9 ,.:;!?()\-_/]", "", concept or "Concept").strip() or "Concept"
     return f"""from manim import *
 
 class NeuroScene(Scene):
@@ -60,6 +82,44 @@ class NeuroScene(Scene):
         self.play(Create(left), Create(right), GrowArrow(arrow))
         self.wait(1.5)
 """
+
+
+def _is_safe_scene_code(scene_code: str) -> tuple[bool, str]:
+    try:
+        tree = ast.parse(scene_code)
+    except SyntaxError as exc:
+        return False, f"syntax_error:{exc.msg}"
+
+    has_neuro_scene = False
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root not in _ALLOWED_IMPORT_ROOTS:
+                    return False, f"disallowed_import:{root}"
+
+        if isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root and root not in _ALLOWED_IMPORT_ROOTS:
+                return False, f"disallowed_import_from:{root}"
+
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _DISALLOWED_CALL_NAMES:
+                return False, f"disallowed_call:{node.func.id}"
+
+            if isinstance(node.func, ast.Attribute):
+                attr_name = node.func.attr
+                if attr_name in _DISALLOWED_ATTR_CALLS:
+                    return False, f"disallowed_attr_call:{attr_name}"
+
+        if isinstance(node, ast.ClassDef) and node.name == "NeuroScene":
+            has_neuro_scene = True
+
+    if not has_neuro_scene:
+        return False, "missing_neuroscene"
+
+    return True, "ok"
 
 
 def _extract_python_code(text: str) -> str:
@@ -240,6 +300,11 @@ def generate_manim_animation(
                 scene_code = extracted or scene_code
             except Exception:
                 scene_code = _default_scene_code(concept)
+
+        is_safe, safety_reason = _is_safe_scene_code(scene_code)
+        if not is_safe:
+            last_error = f"unsafe_scene_code:{safety_reason}"
+            scene_code = _default_scene_code(concept)
 
         ok, message, output_path = _render_scene(scene_code, key, timeout_seconds=20)
         if ok:

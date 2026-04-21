@@ -95,3 +95,23 @@ def test_generate_request_allows_missing_hyperfocus_composite():
     )
 
     assert req.state_vector.hyperfocus_composite == 0.0
+
+
+def test_generate_request_accepts_voice_profile_and_avatar_source_fields():
+    req = GenerateRequest.model_validate(
+        {
+            "action_id": 3,
+            "slide_content": "Explain this concept with a talking avatar.",
+            "learner_level": "grade8",
+            "session_id": str(uuid4()),
+            "learner_id": str(uuid4()),
+            "confidence": 0.88,
+            "state_vector": _state_vector(),
+            "voice_profile": "af_bella",
+            "source_image": "/tmp/source_avatar.png",
+        }
+    )
+
+    assert req.learner_id is not None
+    assert req.voice_profile == "af_bella"
+    assert req.source_image == "/tmp/source_avatar.png"

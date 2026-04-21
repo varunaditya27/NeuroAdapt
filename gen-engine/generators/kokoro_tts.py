@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import os
+import tempfile
 import wave
 from pathlib import Path
 from typing import Any, cast
@@ -102,6 +104,33 @@ def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> dict[str
     }
 
 
+def _decode_voice_profile_sample(voice_profile: str) -> Path | None:
+    raw = (voice_profile or "").strip()
+    if not raw:
+        return None
+
+    if raw.startswith("data:"):
+        marker = ";base64,"
+        if marker not in raw:
+            return None
+        raw = raw.split(marker, 1)[1].strip()
+
+    if len(raw) < 64:
+        return None
+
+    try:
+        decoded = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+    if len(decoded) < 256:
+        return None
+
+    with tempfile.NamedTemporaryFile(prefix="kokoro_voice_", suffix=".wav", delete=False) as tmp:
+        tmp.write(decoded)
+        return Path(tmp.name)
+
+
 def _resolve_voice(voice_profile: str | None) -> tuple[str, str | None]:
     default_voice = os.getenv("KOKORO_DEFAULT_VOICE", "af_bella")
     if not voice_profile:
@@ -118,6 +147,23 @@ def _resolve_voice(voice_profile: str | None) -> tuple[str, str | None]:
             return default_voice, "Voice clone endpoint returned no voice_id; using default voice."
         except Exception as exc:
             return default_voice, f"Voice cloning failed; using default voice ({exc})."
+
+    decoded_sample = _decode_voice_profile_sample(voice_profile)
+    if decoded_sample is not None:
+        clone_name = f"clone_{decoded_sample.stem[:24] or 'voice'}"
+        try:
+            payload = clone_voice_from_sample(str(decoded_sample), voice_name=clone_name)
+            voice_id = payload.get("voice_id")
+            if isinstance(voice_id, str) and voice_id.strip():
+                return voice_id.strip(), None
+            return default_voice, "Voice clone endpoint returned no voice_id; using default voice."
+        except Exception as exc:
+            return default_voice, f"Voice cloning failed; using default voice ({exc})."
+        finally:
+            try:
+                decoded_sample.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return voice_profile, None
 

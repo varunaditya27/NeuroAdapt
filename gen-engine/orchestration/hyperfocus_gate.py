@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from typing import Any, Dict, Tuple
 ENTER_THRESHOLD = 0.75
 EXIT_THRESHOLD = 0.60
 MIN_EXIT_STABLE_SECONDS = 30.0
+SESSION_TTL_SECONDS = max(60.0, float(os.getenv("HYPERFOCUS_SESSION_TTL_SECONDS", "7200")))
+MAX_TRACKED_SESSIONS = max(100, int(os.getenv("HYPERFOCUS_MAX_TRACKED_SESSIONS", "50000")))
 
 
 @dataclass
@@ -18,10 +21,32 @@ class _SessionState:
     activated_at: float = 0.0
     below_exit_since: float | None = None
     last_composite: float = 0.0
+    last_seen: float = 0.0
 
 
 _SESSION_STATES: Dict[str, _SessionState] = {}
 _SESSION_LOCK = threading.Lock()
+
+
+def _prune_sessions_locked(now: float) -> None:
+    stale_session_ids = [
+        session_id
+        for session_id, state in _SESSION_STATES.items()
+        if state.last_seen > 0.0 and (now - state.last_seen) > SESSION_TTL_SECONDS
+    ]
+    for session_id in stale_session_ids:
+        _SESSION_STATES.pop(session_id, None)
+
+    overflow = len(_SESSION_STATES) - MAX_TRACKED_SESSIONS
+    if overflow <= 0:
+        return
+
+    oldest = sorted(
+        _SESSION_STATES.items(),
+        key=lambda item: item[1].last_seen,
+    )[:overflow]
+    for session_id, _ in oldest:
+        _SESSION_STATES.pop(session_id, None)
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -98,8 +123,10 @@ def check_hyperfocus(session_id: str, state_vector: Dict[str, Any]) -> Tuple[boo
     composite = compute_hyperfocus_composite(state_vector)
 
     with _SESSION_LOCK:
+        _prune_sessions_locked(now)
         session = _SESSION_STATES.setdefault(session_id, _SessionState())
         session.last_composite = composite
+        session.last_seen = now
 
         if not session.active:
             if composite >= ENTER_THRESHOLD:

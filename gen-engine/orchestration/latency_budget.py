@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import os
-import queue
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Callable, Dict, Tuple
 
 _TIMEOUTS = {
-    "text_simplify": float(os.getenv("LATENCY_BUDGET_TEXT_SIMPLIFY", "5")),
+    "text_simplify": float(os.getenv("LATENCY_BUDGET_TEXT_SIMPLIFY", "120")),
     "analogy": float(os.getenv("LATENCY_BUDGET_ANALOGY", "3")),
     "quiz": float(os.getenv("LATENCY_BUDGET_QUIZ", "4")),
     "audio": float(os.getenv("LATENCY_BUDGET_AUDIO", "3")),
@@ -19,6 +18,11 @@ _TIMEOUTS = {
 }
 
 _DEFAULT_TIMEOUT = 5.0
+_LATENCY_BUDGET_MAX_WORKERS = max(2, int(os.getenv("LATENCY_BUDGET_MAX_WORKERS", "16")))
+_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_LATENCY_BUDGET_MAX_WORKERS,
+    thread_name_prefix="latency-budget-worker",
+)
 
 
 def get_timeout_seconds(kind: str) -> float:
@@ -78,31 +82,20 @@ def run_with_timeout(
     Returns: (result, timed_out, elapsed_ms, error)
     """
     start = time.perf_counter()
-
-    result_queue: queue.Queue[Tuple[str, Any]] = queue.Queue(maxsize=1)
-
-    def _target() -> None:
-        try:
-            result_queue.put(("result", func(*args, **kwargs)))
-        except Exception as exc:  # pragma: no cover - depends on generator impl
-            result_queue.put(("error", exc))
-
-    thread = threading.Thread(target=_target, daemon=True, name="latency-budget-worker")
-    thread.start()
-    thread.join(timeout=max(0.1, timeout_seconds))
-
-    elapsed_ms = int((time.perf_counter() - start) * 1000)
-    if thread.is_alive():
-        return {}, True, elapsed_ms, "timeout"
+    timeout = max(0.1, timeout_seconds)
+    future = _EXECUTOR.submit(func, *args, **kwargs)
 
     try:
-        tag, payload = result_queue.get_nowait()
-    except queue.Empty:  # pragma: no cover - defensive
-        return {}, False, elapsed_ms, "worker_no_result"
+        payload = future.result(timeout=timeout)
+    except FutureTimeout:
+        future.cancel()
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        return {}, True, elapsed_ms, "timeout"
+    except Exception as exc:  # pragma: no cover - depends on generator impl
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        return {}, False, elapsed_ms, str(exc)
 
-    if tag == "error":
-        return {}, False, elapsed_ms, str(payload)
-
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
     if isinstance(payload, dict):
         return payload, False, elapsed_ms, None
 

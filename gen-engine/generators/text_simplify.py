@@ -108,7 +108,7 @@ def _build_prompt(base_prompt: str, text: str, target_level: str, strict: bool =
     )
 
 
-def _call_ollama(prompt: str, timeout_seconds: float = 4.0) -> str:
+def _call_ollama(prompt: str, timeout_seconds: float = 120.0) -> str:
     response = requests.post(
         f"{OLLAMA_URL}/api/generate",
         json={
@@ -159,7 +159,7 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
         prompt = _build_prompt(base_prompt, text, normalized_level, strict=strict)
 
         try:
-            candidate = _call_ollama(prompt, timeout_seconds=4.0 if not strict else 4.5)
+            candidate = _call_ollama(prompt, timeout_seconds=60.0 if not strict else 90.0)
         except Exception as exc:
             if attempt < 2:
                 continue

@@ -99,6 +99,10 @@ class ContentPayload(BaseModel):
     analogies: Optional[List[Analogy]] = Field(
         None, description="Three analogies for concept explanation"
     )
+    analogy_types: Optional[List[str]] = Field(
+        None,
+        description="Analogy domain labels aligned with each analogy entry",
+    )
 
     # Visual generation (action_id=3)
     image_url: Optional[str] = Field(None, description="Generated image URL")

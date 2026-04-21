@@ -20,6 +20,7 @@ from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_
 from orchestration.prefetch_manager import prefetch_manager
 
 _LAST_CSS_BY_SESSION: Dict[str, Dict[str, str]] = {}
+_MAX_SESSION_CSS_ENTRIES = max(100, int(os.getenv("MAX_SESSION_CSS_ENTRIES", "5000")))
 
 _CONTENT_TYPE_NORMALIZATION = {
     "animation": "animation",
@@ -74,6 +75,22 @@ def _resolved_content_type(request_data: dict[str, Any]) -> str:
 
 def _safe_session_id(request_data: dict[str, Any]) -> str:
     return str(request_data.get("session_id", "unknown"))
+
+
+def _get_env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _prune_css_session_cache() -> None:
+    overflow = len(_LAST_CSS_BY_SESSION) - _MAX_SESSION_CSS_ENTRIES
+    for _ in range(max(0, overflow)):
+        _LAST_CSS_BY_SESSION.pop(next(iter(_LAST_CSS_BY_SESSION)), None)
 
 
 def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
@@ -135,6 +152,10 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
             )
             if not a_timed_out and a_result:
                 result["analogies"] = a_result.get("analogies")
+                if a_result.get("analogy_types"):
+                    result["analogy_types"] = a_result.get("analogy_types")
+                if a_result.get("warning") and not result.get("warning"):
+                    result["warning"] = a_result.get("warning")
 
         return result
 
@@ -306,16 +327,16 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
             "no_content": True,
         }
 
-    prefetch_wait_seconds = max(0.0, float(os.getenv("PREFETCH_WAIT_SECONDS", "0.8")))
+    prefetch_wait_seconds = max(0.0, _get_env_float("PREFETCH_WAIT_SECONDS", 0.8))
     if request.action_id == 3:
         prefetch_wait_seconds = max(
             prefetch_wait_seconds,
-            float(os.getenv("PREFETCH_WAIT_SECONDS_ACTION3", "4.0")),
+            _get_env_float("PREFETCH_WAIT_SECONDS_ACTION3", 4.0),
         )
     elif request.action_id == 4:
         prefetch_wait_seconds = max(
             prefetch_wait_seconds,
-            float(os.getenv("PREFETCH_WAIT_SECONDS_ACTION4", "1.2")),
+            _get_env_float("PREFETCH_WAIT_SECONDS_ACTION4", 1.2),
         )
 
     cached, cache_hit = prefetch_manager.get_cached_or_wait(
@@ -341,6 +362,7 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     prev_css = _LAST_CSS_BY_SESSION.get(session_id)
     css = morph_typography(state_vector, locked_css=prev_css)
     _LAST_CSS_BY_SESSION[session_id] = css
+    _prune_css_session_cache()
     payload["css_variables"] = css
 
     return {

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from typing import Any, List
 
 try:
     import psycopg2
+    from psycopg2.pool import SimpleConnectionPool
 except Exception:  # pragma: no cover - optional dependency
     psycopg2 = None
+    SimpleConnectionPool = None
 
 _STOPWORDS = {
     "the",
@@ -30,9 +33,46 @@ _STOPWORDS = {
     "while",
 }
 
+_POOL_LOCK = threading.Lock()
+_DB_POOL: SimpleConnectionPool | None = None
+_DB_POOL_DSN: str | None = None
+
 
 def _db_url() -> str | None:
     return os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
+
+
+def _max_pool_connections() -> int:
+    try:
+        return max(2, int(os.getenv("POSTGRES_POOL_MAXCONN", "8")))
+    except ValueError:
+        return 8
+
+
+def _get_pool(db_url: str) -> SimpleConnectionPool | None:
+    global _DB_POOL, _DB_POOL_DSN
+    if SimpleConnectionPool is None:
+        return None
+
+    with _POOL_LOCK:
+        if _DB_POOL is not None and _DB_POOL_DSN == db_url:
+            return _DB_POOL
+
+        if _DB_POOL is not None:
+            try:
+                _DB_POOL.closeall()
+            except Exception:
+                pass
+
+        try:
+            _DB_POOL = SimpleConnectionPool(1, _max_pool_connections(), dsn=db_url)
+            _DB_POOL_DSN = db_url
+        except Exception:
+            _DB_POOL = None
+            _DB_POOL_DSN = None
+            return None
+
+        return _DB_POOL
 
 
 def query_mastery_score(session_id: str, concept_key: str) -> float:
@@ -44,24 +84,42 @@ def query_mastery_score(session_id: str, concept_key: str) -> float:
     if not db_url:
         return 0.5
 
-    try:
-        with psycopg2.connect(db_url, connect_timeout=2) as conn:
+    query = """
+        SELECT mastery_score
+        FROM learner_concept_mastery
+        WHERE session_id = %s AND concept_key = %s
+        ORDER BY updated_at DESC
+        LIMIT 1
+    """
+
+    pool = _get_pool(db_url)
+    if pool is not None:
+        conn = None
+        try:
+            conn = pool.getconn()
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT mastery_score
-                    FROM learner_concept_mastery
-                    WHERE session_id = %s AND concept_key = %s
-                    ORDER BY updated_at DESC
-                    LIMIT 1
-                    """,
-                    (session_id, concept_key),
-                )
+                cur.execute(query, (session_id, concept_key))
                 row = cur.fetchone()
                 if row and row[0] is not None:
                     return max(0.0, min(1.0, float(row[0])))
-    except Exception:
-        return 0.5
+        except Exception:
+            return 0.5
+        finally:
+            if conn is not None:
+                try:
+                    pool.putconn(conn)
+                except Exception:
+                    pass
+    else:
+        try:
+            with psycopg2.connect(db_url, connect_timeout=2) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, (session_id, concept_key))
+                    row = cur.fetchone()
+                    if row and row[0] is not None:
+                        return max(0.0, min(1.0, float(row[0])))
+        except Exception:
+            return 0.5
 
     return 0.5
 

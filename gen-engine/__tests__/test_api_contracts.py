@@ -97,3 +97,28 @@ def test_health_includes_documented_reachability_and_capacity_fields():
         first_service = next(iter(payload["services"].values()))
         assert "status" in first_service
         assert "checked_seconds_ago" in first_service
+
+
+def test_generate_action_three_accepts_voice_profile_and_source_image_fields():
+    response = client.post(
+        "/api/generate",
+        json={
+            "action_id": 3,
+            "slide_content": "Explain this with narration and an avatar.",
+            "learner_level": "grade8",
+            "session_id": str(uuid4()),
+            "learner_id": str(uuid4()),
+            "confidence": 0.81,
+            "voice_profile": "af_bella",
+            "source_image": "/tmp/source.png",
+            "content_type": "audio",
+            "state_vector": _state_vector(),
+        },
+    )
+
+    # Should pass schema validation and route successfully even when downstream services
+    # degrade to text-only/audio-unavailable fallback paths.
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action_id"] == 3
+    assert "content" in payload

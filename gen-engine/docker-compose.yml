@@ -30,6 +30,8 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=30m
+      - OLLAMA_NUM_THREADS=8
     logging:
       driver: "local"
       options:
@@ -119,6 +121,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
       - POSTGRES_URL=${POSTGRES_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LATENCY_BUDGET_TEXT_SIMPLIFY=${LATENCY_BUDGET_TEXT_SIMPLIFY:-120}
       - GENERATION_CACHE_SIZE=${GENERATION_CACHE_SIZE:-500}
       - CACHE_MAX_SIZE=${CACHE_MAX_SIZE:-500}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
