@@ -19,7 +19,7 @@ export default function EnergyBarDevPage() {
   };
 
   return (
-    <div style={{ paddingTop: '56px', padding: '40px 20px', maxWidth: '800px', margin: '0 auto' }}>
+    <div style={{ padding: '40px 20px', paddingTop: '80px', maxWidth: '800px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '24px', fontWeight: 500, color: 'var(--navy)', marginBottom: '8px' }}>
         EnergyBar Component
       </h1>

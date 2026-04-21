@@ -1,12 +1,21 @@
+'use client';
+
 import "./globals.css";
 import Navbar from '@/components/Navbar';
-
-export const metadata = {
-  title: "NeuroAdapt",
-  description: "Adaptive learning system",
-};
+import { useEffect } from 'react';
+import { init, destroy } from '@/components/Observer';
 
 export default function RootLayout({ children }) {
+  useEffect(() => {
+    // Initialize Observer globally (persists across page navigations)
+    init();
+
+    return () => {
+      // Only cleanup when the entire app unmounts
+      destroy();
+    };
+  }, []);
+
   return (
     <html lang="en">
       <head>

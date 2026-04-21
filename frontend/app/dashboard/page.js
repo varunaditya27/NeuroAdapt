@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getLastStateVector } from '@/components/Observer';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -19,7 +20,22 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    // Wire up the global flush callback
+    // Read last state vector immediately on mount
+    const lastVector = getLastStateVector();
+    setStateVector({
+      dwell: lastVector[0],
+      jitter: lastVector[1],
+      focus: lastVector[2],
+      stall: lastVector[3],
+      pref_delta: lastVector[4],
+    });
+
+    setStats((prev) => ({
+      ...prev,
+      avgDwell: lastVector[0].toFixed(2),
+    }));
+
+    // Wire up the global flush callback for future updates
     window.__onObserverFlush = (data) => {
       setStats((prev) => ({
         ...prev,

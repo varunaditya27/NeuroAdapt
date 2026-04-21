@@ -9,6 +9,7 @@ import { STATE_VECTOR_DIM, TELEMETRY_INTERVAL } from '../shared_config.js';
 // Module state
 let sessionId = null;
 let flushIntervalId = null;
+let lastStateVector = [0, 0, 1, 0, 0.5]; // Store last computed values [dwell, jitter, focus, stall, pref_delta]
 
 // 30-second window counters and state
 let timeOnSlideMs = 0;
@@ -185,6 +186,11 @@ function handleInteraction() {
  * Compute all 5 normalised signal values
  */
 function computeStateVector() {
+  // Update timeOnSlideMs based on elapsed time since slideVisibilityStartTime
+  if (slideVisibilityStartTime !== null && document.visibilityState === 'visible') {
+    timeOnSlideMs = Date.now() - slideVisibilityStartTime;
+  }
+
   const dwellRatio = computeSemanticDwellRatio();
   const jitter = computeInteractionJitter();
   const focus = computeFocusPersistence();
@@ -194,12 +200,28 @@ function computeStateVector() {
 }
 
 /**
+ * Get the last computed state vector (used by Dashboard on mount)
+ */
+function getLastStateVector() {
+  return lastStateVector;
+}
+
+/**
  * Flush telemetry: compute state vector and POST to /api/state
  */
 async function flush() {
   try {
     const stateVector = computeStateVector();
     const [dwell, jitter, focus, stall, pref_delta] = stateVector;
+
+    console.log('[Observer] Flush triggered:', {
+      timeOnSlideMs,
+      mouseSamplesCount: mouseSamples.length,
+      visibilityHiddenCount,
+      lastInteractionTimestamp,
+      now: Date.now(),
+      dwell, jitter, focus, stall, pref_delta
+    });
 
     const payload = {
       session_id: getSessionId(),
@@ -226,6 +248,9 @@ async function flush() {
         timestamp: new Date().toLocaleTimeString()
       });
     }
+
+    // Store last state vector for Dashboard to read on mount
+    lastStateVector = stateVector;
 
     // Reset counters for the next 30-second window
     resetWindowCounters();
@@ -281,4 +306,4 @@ function destroy() {
 }
 
 // Named exports
-export { init, flush, setPreferenceDelta, destroy };
+export { init, flush, setPreferenceDelta, destroy, getLastStateVector };

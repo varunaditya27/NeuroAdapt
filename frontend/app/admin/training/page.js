@@ -47,8 +47,8 @@ export default function AdminTrainingPage() {
   return (
     <div
       style={{
-        paddingTop: '56px',
         padding: '40px 20px',
+        paddingTop: '80px',
         minHeight: '100vh',
         backgroundColor: 'var(--bg)',
       }}
