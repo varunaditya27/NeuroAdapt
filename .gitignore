@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Local environment files
+.env
+
+# Quantum training artifacts
+quantum/checkpoints/*.pt
+quantum/checkpoints/*_history.json
+quantum/ablation_c_smoke.png
+
