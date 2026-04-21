@@ -25,12 +25,16 @@ class PrefetchManager:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries
+        self.cleared_session_ttl_seconds = max(
+            60,
+            int(os.getenv("PREFETCH_CLEARED_SESSION_TTL_SECONDS", "3600")),
+        )
 
         self._cache: dict[str, _CacheEntry] = {}
         self._active: dict[str, Future[JSONDict]] = {}
         self._lock = threading.Lock()
         self._generator: Optional[GeneratorCallback] = None
-        self._cleared_sessions: set[str] = set()
+        self._cleared_sessions: dict[str, float] = {}
 
     _PREFETCHABLE_ACTIONS = {2, 3, 4}
     _CONTENT_TYPE_NORMALIZATION = {
@@ -130,6 +134,14 @@ class PrefetchManager:
         for key in stale:
             self._cache.pop(key, None)
 
+        stale_sessions = [
+            session_id
+            for session_id, cleared_at in self._cleared_sessions.items()
+            if now - cleared_at > self.cleared_session_ttl_seconds
+        ]
+        for session_id in stale_sessions:
+            self._cleared_sessions.pop(session_id, None)
+
         while len(self._cache) > self.max_entries:
             oldest_key = min(self._cache, key=lambda k: self._cache[k].created_at)
             self._cache.pop(oldest_key, None)
@@ -193,7 +205,7 @@ class PrefetchManager:
         session_id = str(request_data.get("session_id", "unknown"))
         slide_content = str(request_data.get("slide_content", ""))
         learner_level = request_data.get("learner_level")
-        self._cleared_sessions.discard(session_id)
+        self._cleared_sessions.pop(session_id, None)
 
         for action_id in actions:
             content_type = request_data.get("content_type")
@@ -327,7 +339,7 @@ class PrefetchManager:
 
     def clear_session(self, session_id: str) -> None:
         with self._lock:
-            self._cleared_sessions.add(session_id)
+            self._cleared_sessions[session_id] = time.time()
             keys = [k for k in self._cache if k.startswith(f"{session_id}:")]
             for key in keys:
                 self._cache.pop(key, None)
