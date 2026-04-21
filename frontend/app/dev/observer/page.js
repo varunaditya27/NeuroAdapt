@@ -90,7 +90,7 @@ export default function ObserverDevPage() {
   );
 
   return (
-    <div style={{ paddingTop: '56px', padding: '40px 20px', maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ padding: '56px 20px 40px 20px', maxWidth: '600px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '24px', fontWeight: 500, color: 'var(--navy)', marginBottom: '8px' }}>
         Observer Telemetry
       </h1>
