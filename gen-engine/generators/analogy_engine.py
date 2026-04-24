@@ -121,7 +121,7 @@ def _max_pair_similarity(analogies: list[dict[str, Any]]) -> float:
 
 
 def _try_ollama(
-    concept: str, slide_content: str, timeout_seconds: float = 2.8
+    concept: str, slide_content: str, timeout_seconds: float = 450
 ) -> list[dict[str, Any]] | None:
     prompt = (
         "Generate exactly 3 analogies for an educational concept."

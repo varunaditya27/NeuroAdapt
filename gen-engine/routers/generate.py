@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from uuid import uuid4
 from datetime import datetime
 from typing import Any
 
@@ -122,20 +121,15 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse | Respo
         action_id=int(routed.get("action_id", request.action_id)),
         content=ContentPayload(**payload),
         generation_time_ms=generation_time_ms,
-        cache_hit=bool(routed.get("cache_hit", False)),
-        hyperfocus_override=bool(routed.get("hyperfocus_override", False)),
-        error=routed.get("error"),
         warning=routed.get("warning"),
         timestamp=datetime.utcnow().isoformat() + "Z",
-        session_id=str(request.session_id),
-        request_id=request.request_id or f"req_{uuid4().hex}",
     )
 
     _record_generate_metrics(
         action_id=response.action_id,
         status="success",
         generation_time_ms=generation_time_ms,
-        cache_hit=response.cache_hit,
+        cache_hit=bool(routed.get("cache_hit", False)),
         fallback_stage=payload.get("fallback_stage"),
         learner_level=learner_level,
         fk_result=fk_result,

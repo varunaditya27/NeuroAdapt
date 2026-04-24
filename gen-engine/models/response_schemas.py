@@ -165,15 +165,20 @@ class GenerateResponse(BaseModel):
     action_id: int = Field(..., ge=0, le=5, description="Action that was performed")
     content: ContentPayload = Field(..., description="Generated content payload")
     generation_time_ms: int = Field(..., ge=0, description="Time taken to generate content")
-    cache_hit: bool = Field(..., description="Whether content came from cache")
-    hyperfocus_override: bool = Field(
-        ..., description="Whether generation was bypassed due to hyperfocus protection"
-    )
-    error: Optional[str] = Field(None, description="Error message if fallback was applied")
     warning: Optional[str] = Field(None, description="Warning about degraded quality")
     timestamp: str = Field(..., description="Response timestamp (ISO 8601)")
-    session_id: str = Field(..., description="Session identifier")
-    request_id: str = Field(..., description="Unique request identifier for tracing")
+
+    # ---------------------------------------------------------------------
+    # Advanced top-level fields intentionally hidden from public workflow API.
+    # Keep these lines commented for future reintegration/reference.
+    # ---------------------------------------------------------------------
+    # cache_hit: bool = Field(..., description="Whether content came from cache")
+    # hyperfocus_override: bool = Field(
+    #     ..., description="Whether generation was bypassed due to hyperfocus protection"
+    # )
+    # error: Optional[str] = Field(None, description="Error message if fallback was applied")
+    # session_id: str = Field(..., description="Session identifier")
+    # request_id: str = Field(..., description="Unique request identifier for tracing")
 
     @field_validator("timestamp")
     @classmethod
@@ -204,10 +209,8 @@ class GenerateResponse(BaseModel):
                     "encouragement_text": "Great job working through this complex topic!",
                 },
                 "generation_time_ms": 1250,
-                "cache_hit": False,
+                "warning": None,
                 "timestamp": "2026-04-18T14:30:00Z",
-                "session_id": "550e8400-e29b-41d4-a716-446655440000",
-                "request_id": "req_123456",
             }
         }
     )

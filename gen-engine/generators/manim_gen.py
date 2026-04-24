@@ -132,7 +132,7 @@ def _extract_python_code(text: str) -> str:
     return text.strip()
 
 
-def _call_ollama(prompt: str, system: str, timeout_seconds: float = 10.0) -> str:
+def _call_ollama(prompt: str, system: str, timeout_seconds: float = 600.0) -> str:
     response = requests.post(
         f"{OLLAMA_URL}/api/generate",
         json={

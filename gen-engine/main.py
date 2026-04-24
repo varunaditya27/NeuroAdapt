@@ -40,7 +40,7 @@ KEY FUNCTIONS:
 
 INTEGRATION POINTS:
     - Backend (NeuroAdapt orchestrator) sends POST requests to /api/generate
-    - Returns {action_id, content, generation_time_ms, cache_hit}
+    - Returns {action_id, content, generation_time_ms, warning?, timestamp}
     - Forwards state_vector and confidence from orchestrator to generators
 
 METRICS (Prometheus):

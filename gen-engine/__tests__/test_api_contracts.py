@@ -26,23 +26,22 @@ def _state_vector(**overrides):
     return base
 
 
-def test_generate_action_one_includes_hyperfocus_override_field():
+def test_generate_action_one_accepts_workflow_minimal_request():
     response = client.post(
         "/api/generate",
         json={
             "action_id": 1,
             "slide_content": "Sentence one. Sentence two.",
             "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.75,
-            "state_vector": _state_vector(),
         },
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert "hyperfocus_override" in payload
-    assert payload["hyperfocus_override"] is False
+    assert payload["action_id"] == 1
+    assert "cache_hit" not in payload
+    assert "hyperfocus_override" not in payload
+    assert "request_id" not in payload
     assert isinstance(payload["content"].get("chunks"), list)
 
 

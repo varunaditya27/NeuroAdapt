@@ -21,32 +21,17 @@ GENERATE REQUEST STRUCTURE:
         "action_id": int (0-5),
         "slide_content": str (1-5000 chars),
         "learner_level": "grade5" | "grade8" | "university",
-        "session_id": str (UUID format),
-        "confidence": float (0.0-1.0),
-        "state_vector": {
-            "cognitive_load": float (0.0-1.0),
-            "regression_count": int (0-100),
-            "hyperfocus_composite": float (0.0-1.0),
-            "eye_gaze_stability": float (0.0-1.0),
-            "attention_switching": float (0.0-1.0),
-            "time_on_task": int (seconds),
-            "engagement_level": float (0.0-1.0),
-            ... (other telemetry fields)
-        },
-        "learner_id": str (UUID, optional),
-        "concept": str (optional, explicit override),
-        "content_type": "text" | "image" | "animation" | "audio" | "avatar" (optional)
+        // Compatibility extras also accepted:
+        // "session_id", "confidence", "state_vector", "learner_id",
+        // "voice_profile", "source_image", "concept"|"concept_id",
+        // "content_type", "request_id", "learner_profile"
     }
 
 VALIDATION RULES:
     - action_id: Required, must be 0-5
     - slide_content: Required, non-empty, max 5000 chars
     - learner_level: Required, must match enum
-    - session_id: Required, must be valid UUID
-    - confidence: Required, must be 0.0-1.0
-    - state_vector: Required, must have all substates (or use defaults)
-    - learner_id: Optional, if provided must be valid UUID
-    - concept: Optional, if provided must be non-empty
+    - Advanced metadata is optional compatibility input and is resolved with safe defaults
 
 STATE VECTOR SUBSTATES:
     - cognitive_load: Required, 0.0-1.0
@@ -99,8 +84,8 @@ RELATED:
 """
 
 from enum import Enum
-from typing import Optional
-from uuid import UUID
+from typing import Any, Optional
+from uuid import UUID, uuid4
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, ConfigDict
 
@@ -137,10 +122,16 @@ class StateVector(BaseModel):
 
     # Core required fields from orchestrator.
     cognitive_load: float = Field(
-        ..., ge=0.0, le=1.0, description="Current cognitive load estimate (0.0=low, 1.0=overloaded)"
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Current cognitive load estimate (0.0=low, 1.0=overloaded)",
     )
     regression_count: int = Field(
-        ..., ge=0, le=100, description="Number of regressions in current session"
+        default=0,
+        ge=0,
+        le=100,
+        description="Number of regressions in current session",
     )
     hyperfocus_composite: float = Field(
         default=0.0,
@@ -246,12 +237,12 @@ class GenerateRequest(BaseModel):
     Validates all incoming generation requests from the orchestrator.
     """
 
-    # Required core fields
+    # Workflow-baseline required fields
     action_id: int = Field(
         ...,
         ge=0,
         le=5,
-        description="Action to perform (0=hold, 1=chunk, 2=simplify, 3=visual, 4=quiz, 5=break)",
+        description="Action to perform (0=hold, 1=nudge, 2=simplify, 3=video, 4=game, 5=break)",
     )
     slide_content: str = Field(
         ...,
@@ -260,44 +251,128 @@ class GenerateRequest(BaseModel):
         description="Content to transform (text, concept description, etc.)",
     )
     learner_level: LearnerLevel = Field(..., description="Target reading/complexity level")
-    session_id: UUID = Field(..., description="Unique session identifier")
-    confidence: float = Field(
-        ..., ge=0.0, le=1.0, description="Orchestrator confidence in this action (0.0-1.0)"
-    )
-    state_vector: StateVector = Field(..., description="Real-time learner state information")
 
-    # Optional fields
-    learner_id: Optional[UUID] = Field(
-        None,
-        description="Optional learner identifier used by mastery/TTS/avatar generators",
-    )
-    voice_profile: Optional[str] = Field(
-        None,
-        min_length=1,
-        description=(
-            "Optional voice profile selector or base64-encoded 10s WAV sample used for Kokoro"
-        ),
-    )
-    source_image: Optional[str] = Field(
-        None,
-        min_length=1,
-        max_length=2048,
-        description="Optional source image path/URL hint for avatar generation",
-    )
-    learner_profile: Optional[LearnerProfile] = Field(
-        None, description="Learner-specific preferences and accommodations"
-    )
-    concept: Optional[str] = Field(
-        None,
-        min_length=1,
-        max_length=200,
-        validation_alias=AliasChoices("concept", "concept_id"),
-        description="Explicit concept override (if different from slide_content)",
-    )
-    content_type: Optional[ContentType] = Field(
-        None, description="Specific content type for action_id=3 (visual generation)"
-    )
-    request_id: Optional[str] = Field(None, description="Client-provided request ID for tracing")
+    # ---------------------------------------------------------------------
+    # Advanced fields intentionally hidden from the public baseline schema.
+    # Keep these lines commented for future reintegration/reference.
+    # ---------------------------------------------------------------------
+    # session_id: UUID = Field(..., description="Unique session identifier")
+    # confidence: float = Field(
+    #     ..., ge=0.0, le=1.0, description="Orchestrator confidence in this action (0.0-1.0)"
+    # )
+    # state_vector: StateVector = Field(..., description="Real-time learner state information")
+    # learner_id: Optional[UUID] = Field(
+    #     None,
+    #     description="Optional learner identifier used by mastery/TTS/avatar generators",
+    # )
+    # voice_profile: Optional[str] = Field(
+    #     None,
+    #     min_length=1,
+    #     description=(
+    #         "Optional voice profile selector or base64-encoded 10s WAV sample used for Kokoro"
+    #     ),
+    # )
+    # source_image: Optional[str] = Field(
+    #     None,
+    #     min_length=1,
+    #     max_length=2048,
+    #     description="Optional source image path/URL hint for avatar generation",
+    # )
+    # learner_profile: Optional[LearnerProfile] = Field(
+    #     None, description="Learner-specific preferences and accommodations"
+    # )
+    # concept: Optional[str] = Field(
+    #     None,
+    #     min_length=1,
+    #     max_length=200,
+    #     validation_alias=AliasChoices("concept", "concept_id"),
+    #     description="Explicit concept override (if different from slide_content)",
+    # )
+    # content_type: Optional[ContentType] = Field(
+    #     None, description="Specific content type for action_id=3 (visual generation)"
+    # )
+    # request_id: Optional[str] = Field(None, description="Client-provided request ID for tracing")
+
+    def _extra(self, *keys: str, default: Any = None) -> Any:
+        extras = self.model_extra or {}
+        for key in keys:
+            value = extras.get(key)
+            if value is not None:
+                return value
+        return default
+
+    def resolved_session_id(self) -> str:
+        raw = self._extra("session_id")
+        if raw is None:
+            return str(uuid4())
+        try:
+            return str(UUID(str(raw)))
+        except Exception:
+            return str(uuid4())
+
+    def resolved_state_vector(self) -> StateVector:
+        raw = self._extra("state_vector")
+        if raw is None:
+            return StateVector()
+        if isinstance(raw, StateVector):
+            return raw
+        if isinstance(raw, dict):
+            try:
+                return StateVector.model_validate(raw)
+            except Exception:
+                return StateVector()
+        return StateVector()
+
+    def resolved_confidence(self) -> float:
+        raw = self._extra("confidence", default=0.5)
+        try:
+            return max(0.0, min(1.0, float(raw)))
+        except Exception:
+            return 0.5
+
+    def resolved_concept(self) -> Optional[str]:
+        raw = self._extra("concept", "concept_id")
+        if raw is None:
+            return None
+        concept = str(raw).strip()
+        return concept or None
+
+    def resolved_content_type(self) -> Optional[str]:
+        raw = self._extra("content_type")
+        if raw is None:
+            return None
+        normalized = str(raw).strip().lower()
+        return ContentType(normalized).value if normalized in ContentType._value2member_map_ else None
+
+    def resolved_request_id(self) -> Optional[str]:
+        raw = self._extra("request_id")
+        if raw is None:
+            return None
+        request_id = str(raw).strip()
+        return request_id or None
+
+    def resolved_learner_id(self) -> Optional[str]:
+        raw = self._extra("learner_id")
+        if raw is None:
+            return None
+        try:
+            return str(UUID(str(raw)))
+        except Exception:
+            return None
+
+    def resolved_voice_profile(self) -> Optional[str]:
+        raw = self._extra("voice_profile")
+        if raw is None:
+            return None
+        voice_profile = str(raw).strip()
+        return voice_profile or None
+
+    def resolved_source_image(self) -> Optional[str]:
+        raw = self._extra("source_image")
+        if raw is None:
+            return None
+        source_image = str(raw).strip()
+        return source_image or None
 
     @field_validator("action_id")
     @classmethod
@@ -307,36 +382,14 @@ class GenerateRequest(BaseModel):
             raise ValueError(f"Action ID must be between 0 and 5, got {v}")
         return v
 
-    @field_validator("confidence")
-    @classmethod
-    def validate_confidence(cls, v: float) -> float:
-        """Ensure confidence is within valid range."""
-        if not (0.0 <= v <= 1.0):
-            raise ValueError(f"Confidence must be between 0.0 and 1.0, got {v}")
-        return v
-
     model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
         json_schema_extra={
             "example": {
                 "action_id": 2,
                 "slide_content": "Photosynthesis is the biochemical process by which autotrophic organisms convert light energy into chemical energy stored in glucose molecules.",
                 "learner_level": "grade8",
-                "session_id": "550e8400-e29b-41d4-a716-446655440000",
-                "confidence": 0.85,
-                "learner_id": "2f5671d2-4b0f-4ef2-a93d-d4e47a4a147f",
-                "voice_profile": "af_bella",
-                "source_image": "/tmp/avatar_source.png",
-                "state_vector": {
-                    "cognitive_load": 0.7,
-                    "regression_count": 3,
-                    "hyperfocus_composite": 0.85,
-                    "eye_gaze_stability": 0.8,
-                    "attention_switching": 0.2,
-                    "time_on_task": 450,
-                    "engagement_level": 0.9,
-                },
-                "concept": "photosynthesis",
-                "content_type": "text",
             }
         }
     )

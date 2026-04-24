@@ -32,7 +32,7 @@ def test_generate_request_accepts_concept_id_alias():
         }
     )
 
-    assert req.concept == "conservation_of_energy"
+    assert req.resolved_concept() == "conservation_of_energy"
 
 
 def test_prefetch_request_accepts_concept_id_alias():
@@ -73,10 +73,8 @@ def test_generate_request_accepts_stem_and_general_content_types():
         }
     )
 
-    assert stem_req.content_type is not None
-    assert stem_req.content_type.value == "stem"
-    assert general_req.content_type is not None
-    assert general_req.content_type.value == "general"
+    assert stem_req.resolved_content_type() == "stem"
+    assert general_req.resolved_content_type() == "general"
 
 
 def test_generate_request_allows_missing_hyperfocus_composite():
@@ -94,7 +92,7 @@ def test_generate_request_allows_missing_hyperfocus_composite():
         }
     )
 
-    assert req.state_vector.hyperfocus_composite == 0.0
+    assert req.resolved_state_vector().hyperfocus_composite == 0.0
 
 
 def test_generate_request_accepts_voice_profile_and_avatar_source_fields():
@@ -112,6 +110,6 @@ def test_generate_request_accepts_voice_profile_and_avatar_source_fields():
         }
     )
 
-    assert req.learner_id is not None
-    assert req.voice_profile == "af_bella"
-    assert req.source_image == "/tmp/source_avatar.png"
+    assert req.resolved_learner_id() is not None
+    assert req.resolved_voice_profile() == "af_bella"
+    assert req.resolved_source_image() == "/tmp/source_avatar.png"

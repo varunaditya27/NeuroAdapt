@@ -108,7 +108,7 @@ def _build_prompt(base_prompt: str, text: str, target_level: str, strict: bool =
     )
 
 
-def _call_ollama(prompt: str, timeout_seconds: float = 120.0) -> str:
+def _call_ollama(prompt: str, timeout_seconds: float = 450.0) -> str:
     response = requests.post(
         f"{OLLAMA_URL}/api/generate",
         json={
