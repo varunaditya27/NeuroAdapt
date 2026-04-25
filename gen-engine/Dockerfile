@@ -32,6 +32,11 @@ RUN apt-get update && apt-get install -y \
     libcairo2-dev \
     libpango1.0-dev \
     libffi-dev \
+    texlive \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    dvipng \
+    dvisvgm \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

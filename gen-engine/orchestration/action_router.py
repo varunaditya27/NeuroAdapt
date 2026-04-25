@@ -56,7 +56,14 @@ def classify_tier(action_id: int) -> str:
 
 def _is_stem_content(text: str) -> bool:
     low = text.lower()
-    markers = ["equation", "vector", "force", "algorithm", "physics", "math", "graph", "derivative"]
+    # Expanded markers to include biology, chemistry, life sciences, and other STEM
+    markers = [
+        "equation", "vector", "force", "algorithm", "physics", "math", "graph", "derivative",
+        "photosynthesis", "biology", "chemistry", "cell", "dna", "molecule", "atom",
+        "reaction", "compound", "organic", "reaction", "enzyme", "protein", "gene",
+        "membrane", "mitochondria", "chloroplast", "electron", "ion", "orbital",
+        "periodic", "isotope", "valence", "bond", "catalysis"
+    ]
     return any(marker in low for marker in markers)
 
 
@@ -217,7 +224,7 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
         if content_type == "animation":
             anim_res, timed_out, _, error = run_with_timeout(
                 generate_manim_animation,
-                get_timeout_seconds("manim"),
+                max(120, get_timeout_seconds("manim")),  # At least 120s for manim with Groq LLM
                 concept,
                 slide_content,
                 learner_level,

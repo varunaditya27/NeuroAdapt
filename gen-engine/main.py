@@ -66,6 +66,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 import requests
 from orchestration.prefetch_manager import prefetch_manager
+from orchestration.llm_provider import verify_llm_provider
 from models.response_schemas import HealthResponse
 from routers.generate import router as generate_router
 from routers.health import router as health_router
@@ -136,6 +137,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             logger.info(f"✓ {service_name} is available")
         else:
             logger.warning(f"✗ {service_name} unavailable: {error} (will degrade gracefully)")
+
+    # Verify LLM provider configuration
+    try:
+        provider_name, is_healthy = verify_llm_provider()
+        app_state["llm_provider"] = {"name": provider_name, "healthy": is_healthy}
+        if is_healthy:
+            logger.info(f"✓ LLM provider '{provider_name}' is available")
+        else:
+            logger.warning(f"⚠ LLM provider '{provider_name}' unhealthy (degradation may occur)")
+    except Exception as e:
+        logger.error(f"✗ Failed to initialize LLM provider: {e}")
+        app_state["llm_provider"] = {"name": "unknown", "healthy": False, "error": str(e)}
 
     app_state["prompts"] = load_prompts()
     logger.info(f"✓ Loaded {len(app_state['prompts'])} prompt templates")
@@ -370,11 +383,12 @@ async def health_check() -> JSONResponse:
 
     ollama_reachable = bool(app_state["services"].get("Ollama", {}).get("available", False))
     kokoro_reachable = bool(app_state["services"].get("Kokoro TTS", {}).get("available", False))
+    llm_provider_info = app_state.get("llm_provider", {"name": "unknown", "healthy": False})
 
     disk = shutil.disk_usage("/")
     disk_space_gb = round(disk.free / (1024**3), 1)
     cache_size_mb = _directory_size_mb(Path(__file__).parent / "cache")
-    overall_status = "healthy" if (ollama_reachable and kokoro_reachable) else "degraded"
+    overall_status = "healthy" if (ollama_reachable and kokoro_reachable and llm_provider_info.get("healthy")) else "degraded"
 
     # Always return 200 OK as long as gen-engine app itself is running
     # External service failures don't make the app unhealthy
@@ -385,6 +399,7 @@ async def health_check() -> JSONResponse:
             "timestamp": datetime.now().isoformat(),
             "ollama_reachable": ollama_reachable,
             "kokoro_reachable": kokoro_reachable,
+            "llm_provider": llm_provider_info,
             "disk_space_gb": disk_space_gb,
             "cache_size_mb": cache_size_mb,
             "services": services_status,

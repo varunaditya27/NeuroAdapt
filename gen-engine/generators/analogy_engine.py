@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import math
-import os
 import re
 from collections import Counter
 from typing import Any
 
-import requests
+from orchestration.llm_provider import call_llm
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
+logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z\-]{2,}")
 _STOPWORDS = {
@@ -120,9 +120,10 @@ def _max_pair_similarity(analogies: list[dict[str, Any]]) -> float:
     return max_similarity
 
 
-def _try_ollama(
+def _try_llm(
     concept: str, slide_content: str, timeout_seconds: float = 450
 ) -> list[dict[str, Any]] | None:
+    """Generate analogies via dynamic LLM provider."""
     prompt = (
         "Generate exactly 3 analogies for an educational concept."
         " Use three distinct domains: nature, sports, tech."
@@ -131,22 +132,14 @@ def _try_ollama(
     )
 
     try:
-        response = requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.4, "num_predict": 500},
-            },
-            timeout=timeout_seconds,
+        response = call_llm(
+            prompt=prompt,
+            temperature=0.4,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+            timeout_seconds=timeout_seconds,
         )
-        response.raise_for_status()
-        payload = response.json().get("response", "")
-        import json
-
-        maybe = json.loads(payload)
+        maybe = json.loads(response)
         if isinstance(maybe, list) and len(maybe) >= 3:
             cleaned: list[dict[str, Any]] = []
             for idx, row in enumerate(maybe[:3], start=1):
@@ -160,7 +153,8 @@ def _try_ollama(
                     }
                 )
             return cleaned
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"LLM analogy generation failed: {exc}")
         return None
 
     return None
@@ -173,7 +167,7 @@ def generate_analogies(
 ) -> dict[str, Any]:
     """Return 3 analogies in distinct domains."""
     concept_value = concept or "the concept"
-    analogies = _try_ollama(concept_value, slide_content) or _template_analogies(concept_value)
+    analogies = _try_llm(concept_value, slide_content) or _template_analogies(concept_value)
 
     warning: str | None = None
     max_similarity = _max_pair_similarity(analogies)

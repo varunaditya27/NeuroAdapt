@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from pathlib import Path
 from typing import Any, Tuple
 
-import requests
 
 try:
     import textstat
@@ -16,9 +14,8 @@ except Exception:  # pragma: no cover - optional runtime dependency
     textstat = None
 
 from generators.chunk_renderer import chunk_text
+from orchestration.llm_provider import call_llm
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 TARGETS = {
@@ -108,20 +105,14 @@ def _build_prompt(base_prompt: str, text: str, target_level: str, strict: bool =
     )
 
 
-def _call_ollama(prompt: str, timeout_seconds: float = 450.0) -> str:
-    response = requests.post(
-        f"{OLLAMA_URL}/api/generate",
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.2, "top_p": 0.9, "num_predict": 512},
-        },
-        timeout=timeout_seconds,
+def _call_llm(prompt: str, timeout_seconds: float = 450.0) -> str:
+    """Call LLM via dynamic provider (Groq or Ollama) for text simplification."""
+    return call_llm(
+        prompt=prompt,
+        temperature=0.2,
+        max_tokens=512,
+        timeout_seconds=timeout_seconds,
     )
-    response.raise_for_status()
-    payload = response.json()
-    return (payload.get("response") or "").strip()
 
 
 def _cache_get(key: str) -> dict[str, Any] | None:
@@ -159,7 +150,7 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
         prompt = _build_prompt(base_prompt, text, normalized_level, strict=strict)
 
         try:
-            candidate = _call_ollama(prompt, timeout_seconds=60.0 if not strict else 90.0)
+            candidate = _call_llm(prompt, timeout_seconds=60.0 if not strict else 90.0)
         except Exception as exc:
             if attempt < 2:
                 continue

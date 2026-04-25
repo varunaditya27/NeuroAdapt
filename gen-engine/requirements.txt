@@ -9,6 +9,7 @@ pydantic==2.10.6
 # ── HTTP / LLM Integration ───────────────────────────────────────
 requests==2.32.3
 tenacity==9.0.0
+groq>=0.4.0
 
 # ── Text Processing ──────────────────────────────────────────────
 textstat==0.7.3

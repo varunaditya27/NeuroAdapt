@@ -67,7 +67,7 @@ def extract_word_timestamps_with_confidence(
         response = requests.get(
             f"{_base_url()}/v1/audio/timestamps",
             params={"audio_path": audio_path, "text": text or ""},
-            timeout=2,
+            timeout=120,
         )
         response.raise_for_status()
         data = response.json()
@@ -94,7 +94,7 @@ def clone_voice_from_sample(sample_audio_path: str, voice_name: str) -> dict[str
             f"{_base_url()}/v1/voices/create",
             files={"audio": sample_file},
             data={"name": voice_name},
-            timeout=10,
+            timeout=300,
         )
     response.raise_for_status()
     payload = response.json()
@@ -181,7 +181,7 @@ def _extract_wav_bytes(response: requests.Response) -> bytes:
 
     audio_url = payload.get("audio_url")
     if isinstance(audio_url, str) and audio_url.strip():
-        follow = requests.get(audio_url, timeout=4)
+        follow = requests.get(audio_url, timeout=60)
         follow.raise_for_status()
         return cast(bytes, follow.content)
 
