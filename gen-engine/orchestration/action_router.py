@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
+from uuid import uuid4
 
 from generators.analogy_engine import generate_analogies
 from generators.chunk_renderer import chunk_text
@@ -371,18 +371,18 @@ prefetch_manager.set_generator(_prefetch_generator)
 def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     """Main request router called by API endpoint."""
     request_data = request.model_dump(mode="json")
-    session_id = request.resolved_session_id()
-    state_vector = request.resolved_state_vector().model_dump(mode="json", exclude_defaults=True)
+    session_id = str(uuid4())
+    state_vector: dict[str, Any] = {}
 
-    # Compatibility context (legacy advanced payloads still accepted via model extras).
+    # Internal defaults for optional orchestration context.
     request_data["session_id"] = session_id
     request_data["state_vector"] = state_vector
-    request_data["confidence"] = request.resolved_confidence()
-    request_data["concept"] = request.resolved_concept()
-    request_data["content_type"] = request.resolved_content_type()
-    request_data["learner_id"] = request.resolved_learner_id()
-    request_data["voice_profile"] = request.resolved_voice_profile()
-    request_data["source_image"] = request.resolved_source_image()
+    request_data["confidence"] = 0.5
+    request_data["concept"] = None
+    request_data["content_type"] = None
+    request_data["learner_id"] = None
+    request_data["voice_profile"] = None
+    request_data["source_image"] = None
 
     should_preempt, composite, _ = check_hyperfocus(
         session_id=session_id, state_vector=state_vector
@@ -454,10 +454,8 @@ def start_prefetch(prefetch_request: PrefetchRequest) -> Dict[str, Any]:
         "session_id": str(prefetch_request.session_id),
         "slide_content": prefetch_request.slide_content,
         "learner_level": prefetch_request.learner_level.value,
-        "content_type": prefetch_request.content_type.value
-        if prefetch_request.content_type
-        else None,
-        "concept": prefetch_request.concept,
+        "content_type": None,
+        "concept": None,
     }
     queued = prefetch_manager.start_prefetch(prefetch_request.top_actions, request_data)
 

@@ -1,28 +1,7 @@
-"""
-Response Schemas — Pydantic Models for Output Serialization
-
-================================================================================
-PURPOSE:
-    Define and validate outgoing response structure to Frontend.
-    Ensure all fields are serializable, correct types, valid values.
-    Auto-generate OpenAPI documentation.
-
-DEPENDENCIES:
-    - pydantic==2.13.2 : Data validation & serialization
-    - typing : Type hints
-    - datetime : Timestamps
-
-RESPONSE MODELS:
-    1. GenerateResponse : Main POST /api/generate output
-    2. ContentPayload : Nested content by action_id
-    3. ErrorResponse : Error case response
-    4. HealthResponse : GET /health response
-
-================================================================================
-"""
+"""Response schemas for Gen Engine API contracts."""
 
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
@@ -53,32 +32,8 @@ class WordTimestamp(BaseModel):
     end_ms: int = Field(..., ge=0, description="End time in milliseconds")
 
 
-class Analogy(BaseModel):
-    """Analogy structure for escape hatch."""
-
-    id: int = Field(..., ge=0, description="Analogy identifier")
-    title: str = Field(..., description="Short title for the analogy")
-    source_domain: str = Field(..., description="Domain (sports/nature/tech/everyday)")
-    explanation: str = Field(..., description="How the analogy maps to the concept")
-    example: str = Field(..., description="Concrete example using the analogy")
-
-
-class CSSVariables(BaseModel):
-    """Typography and styling CSS variables."""
-
-    font_size_base: Optional[str] = Field(None, alias="--font-size-base")
-    font_weight_body: Optional[str] = Field(None, alias="--font-weight-body")
-    line_height: Optional[str] = Field(None, alias="--line-height")
-    letter_spacing: Optional[str] = Field(None, alias="--letter-spacing")
-    paragraph_margin: Optional[str] = Field(None, alias="--paragraph-margin")
-    color_contrast: Optional[str] = Field(None, alias="--color-contrast")
-    animation_duration: Optional[str] = Field(None, alias="--animation-duration")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 class ContentPayload(BaseModel):
-    """Union of all possible content payloads based on action_id."""
+    """Workflow-relevant output payload across action paths."""
 
     # Text simplification (action_id=2)
     simplified_text: Optional[str] = Field(None, description="FK-verified simplified text")
@@ -88,75 +43,24 @@ class ContentPayload(BaseModel):
     original_fk: Optional[float] = Field(None, ge=0.0, le=20.0, description="Original FK grade")
     chunks: Optional[List[ChunkMetadata]] = Field(None, description="Progressive reveal chunks")
 
-    # Quiz generation (action_id=4)
     quiz_json: Optional[List[Question]] = Field(None, description="Generated quiz questions")
-    mastery_level: Optional[str] = Field(None, description="Learner's mastery tier")
-    estimated_time_seconds: Optional[int] = Field(
-        None, ge=0, description="Estimated quiz completion time"
-    )
 
-    # Analogy generation (action_id=2, escape hatch)
-    analogies: Optional[List[Analogy]] = Field(
-        None, description="Three analogies for concept explanation"
-    )
-    analogy_types: Optional[List[str]] = Field(
-        None,
-        description="Analogy domain labels aligned with each analogy entry",
-    )
-
-    # Visual generation (action_id=3)
     image_url: Optional[str] = Field(None, description="Generated image URL")
     video_url: Optional[str] = Field(None, description="Generated animation/video URL")
-    avatar_video_url: Optional[str] = Field(None, description="Generated avatar video URL")
-    duration_ms: Optional[int] = Field(None, ge=0, description="Video duration in milliseconds")
-    render_logs: Optional[str] = Field(
-        None, description="Render diagnostics output for animation generation"
-    )
-    writer_attempts: Optional[int] = Field(
-        None, ge=0, description="Writer attempt count for Manim generation"
-    )
-    reviewer_attempts: Optional[int] = Field(
-        None, ge=0, description="Reviewer attempt count for Manim generation"
-    )
-    generation_mode: Optional[str] = Field(
-        None, description="Runtime generation mode (e.g., sd_generated, svg_fallback)"
-    )
-    fallback_stage: Optional[str] = Field(
-        None, description="Fallback stage identifier when degradation occurs"
-    )
-    safety_prompt_applied: Optional[bool] = Field(
-        None, description="Whether autism-safe prompt constraints were applied"
-    )
-    safety_verified: Optional[bool] = Field(
-        None, description="Whether output passed explicit post-generation safety verification"
-    )
-    safety_verification_method: Optional[str] = Field(
-        None, description="Safety verification method used"
-    )
-
-    # Audio generation (action_id=3)
     audio_url: Optional[str] = Field(None, description="Generated audio URL")
     word_timestamps: Optional[List[WordTimestamp]] = Field(
         None, description="Per-word timing for dyslexia support"
     )
-    timestamp_confidence: Optional[str] = Field(
-        None, description="Timestamp confidence label (high/heuristic)"
-    )
 
-    # Typography morphing (all actions)
-    css_variables: Optional[CSSVariables] = Field(None, description="Typography CSS variables")
-
-    # Sensory break (action_id=5)
     break_template: Optional[str] = Field(None, description="Pre-built break content")
     suggested_duration_seconds: Optional[int] = Field(
         None, ge=0, description="Suggested break duration"
     )
 
-    # Common encouragement text
     encouragement_text: Optional[str] = Field(None, description="Motivational text")
-
-    # Title for breaks
     title: Optional[str] = Field(None, description="Content title")
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class GenerateResponse(BaseModel):
@@ -164,31 +68,6 @@ class GenerateResponse(BaseModel):
 
     action_id: int = Field(..., ge=0, le=5, description="Action that was performed")
     content: ContentPayload = Field(..., description="Generated content payload")
-    generation_time_ms: int = Field(..., ge=0, description="Time taken to generate content")
-    warning: Optional[str] = Field(None, description="Warning about degraded quality")
-    timestamp: str = Field(..., description="Response timestamp (ISO 8601)")
-
-    # ---------------------------------------------------------------------
-    # Advanced top-level fields intentionally hidden from public workflow API.
-    # Keep these lines commented for future reintegration/reference.
-    # ---------------------------------------------------------------------
-    # cache_hit: bool = Field(..., description="Whether content came from cache")
-    # hyperfocus_override: bool = Field(
-    #     ..., description="Whether generation was bypassed due to hyperfocus protection"
-    # )
-    # error: Optional[str] = Field(None, description="Error message if fallback was applied")
-    # session_id: str = Field(..., description="Session identifier")
-    # request_id: str = Field(..., description="Unique request identifier for tracing")
-
-    @field_validator("timestamp")
-    @classmethod
-    def validate_timestamp(cls, v: str) -> str:
-        """Ensure timestamp is valid ISO 8601."""
-        try:
-            datetime.fromisoformat(v.replace("Z", "+00:00"))
-            return v
-        except ValueError:
-            raise ValueError(f"Invalid ISO 8601 timestamp: {v}")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -205,12 +84,8 @@ class GenerateResponse(BaseModel):
                             "word_count": 8,
                         }
                     ],
-                    "css_variables": {"--font-size-base": "16px", "--line-height": "1.6"},
                     "encouragement_text": "Great job working through this complex topic!",
                 },
-                "generation_time_ms": 1250,
-                "warning": None,
-                "timestamp": "2026-04-18T14:30:00Z",
             }
         }
     )

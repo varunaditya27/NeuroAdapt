@@ -1,93 +1,9 @@
-"""
-Request Schemas — Pydantic Models for Input Validation
-
-================================================================================
-PURPOSE:
-    Define and validate incoming request structure from Backend/Orchestrator.
-    Ensure all required fields present, correct types, valid ranges.
-    Auto-generate OpenAPI documentation.
-
-DEPENDENCIES:
-    - pydantic==2.13.2 : Data validation & serialization
-    - typing : Type hints
-
-INPUT MODELS:
-    1. GenerateRequest : Main POST /api/generate input
-    2. StateVector : Nested learner state information
-    3. PrefetchRequest : Async prefetch request (optional)
-
-GENERATE REQUEST STRUCTURE:
-    {
-        "action_id": int (0-5),
-        "slide_content": str (1-5000 chars),
-        "learner_level": "grade5" | "grade8" | "university",
-        // Compatibility extras also accepted:
-        // "session_id", "confidence", "state_vector", "learner_id",
-        // "voice_profile", "source_image", "concept"|"concept_id",
-        // "content_type", "request_id", "learner_profile"
-    }
-
-VALIDATION RULES:
-    - action_id: Required, must be 0-5
-    - slide_content: Required, non-empty, max 5000 chars
-    - learner_level: Required, must match enum
-    - Advanced metadata is optional compatibility input and is resolved with safe defaults
-
-STATE VECTOR SUBSTATES:
-    - cognitive_load: Required, 0.0-1.0
-    - regression_count: Required, 0-100
-    - hyperfocus_composite: Required, 0.0-1.0
-    - eye_gaze_stability: Optional, defaults to 0.5
-    - attention_switching: Optional, defaults to 0.5
-    - time_on_task: Optional, defaults to 0
-    - engagement_level: Optional, defaults to 0.5
-    (other optional fields with sensible defaults)
-
-VALIDATION ERRORS:
-    If validation fails:
-        → Return 422 Unprocessable Entity
-        → Include detailed error message
-        → Example:
-            {
-                "detail": [
-                    {
-                        "type": "value_error",
-                        "loc": ["body", "action_id"],
-                        "msg": "Action ID must be between 0 and 5",
-                        "input": "invalid"
-                    }
-                ]
-            }
-
-KEY CLASSES:
-    - GenerateRequest : Main input
-    - StateVector : Nested state
-    - LearnerProfile : Optional learner metadata
-    - RequestMetadata : Optional request tracking
-
-ERROR HANDLING:
-    - Invalid UUID: Raise ValidationError
-    - Out-of-range float: Clamp or reject
-    - Missing required field: Reject
-    - Type mismatch: Coerce or reject
-
-INTEGRATION:
-    - Used by routers/generate.py to validate incoming requests
-    - FastAPI auto-validates using Pydantic
-    - OpenAPI docs auto-generated from schemas
-    - Request logging includes validated fields
-
-RELATED:
-    - response_schemas.py : Output validation
-
-================================================================================
-"""
+"""Request schemas for Gen Engine API contracts."""
 
 from enum import Enum
-from typing import Any, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LearnerLevel(str, Enum):
@@ -98,29 +14,9 @@ class LearnerLevel(str, Enum):
     UNIVERSITY = "university"
 
 
-class ContentType(str, Enum):
-    """Enumeration of content types for generation."""
-
-    TEXT = "text"
-    IMAGE = "image"
-    ANIMATION = "animation"
-    AUDIO = "audio"
-    AVATAR = "avatar"
-    STEM = "stem"
-    GENERAL = "general"
-    VISUAL = "visual"
-    VIDEO = "video"
-
-
 class StateVector(BaseModel):
-    """
-    Nested model containing real-time learner state information.
+    """Internal hyperfocus compatibility vector with safe defaults."""
 
-    All values are normalized 0.0-1.0 except where noted.
-    Used by hyperfocus gate and orchestration logic.
-    """
-
-    # Core required fields from orchestrator.
     cognitive_load: float = Field(
         default=0.5,
         ge=0.0,
@@ -137,10 +33,8 @@ class StateVector(BaseModel):
         default=0.0,
         ge=0.0,
         le=1.0,
-        description="Optional pre-computed hyperfocus composite score (compatibility path)",
+        description="Optional pre-computed hyperfocus composite score",
     )
-
-    # Optional fields with defaults
     eye_gaze_stability: float = Field(
         default=0.5,
         ge=0.0,
@@ -163,8 +57,6 @@ class StateVector(BaseModel):
     idle_time_bonus: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Bonus for sustained idle periods"
     )
-
-    # Compatibility fields used by documented hyperfocus detector inputs.
     idle_time: float = Field(
         default=0.0, ge=0.0, description="Idle time in seconds over recent observation window"
     )
@@ -185,8 +77,6 @@ class StateVector(BaseModel):
     learner_avg_duration: float = Field(
         default=1.0, ge=0.0, description="Learner baseline average session duration in seconds"
     )
-
-    # Additional observer-compatible telemetry fields (optional).
     keystroke_cadence: float = Field(
         default=0.0, ge=0.0, description="Raw keystroke cadence signal"
     )
@@ -214,30 +104,9 @@ class StateVector(BaseModel):
     )
 
 
-class LearnerProfile(BaseModel):
-    """Optional learner metadata for personalization."""
-
-    learner_id: Optional[UUID] = Field(None, description="Unique learner identifier")
-    preferred_voice: Optional[str] = Field(None, description="Preferred TTS voice identifier")
-    dyslexia_profile: Optional[bool] = Field(
-        None, description="Whether learner has dyslexia accommodations"
-    )
-    autism_profile: Optional[bool] = Field(
-        None, description="Whether learner has autism accommodations"
-    )
-    adhd_profile: Optional[bool] = Field(
-        None, description="Whether learner has ADHD accommodations"
-    )
-
-
 class GenerateRequest(BaseModel):
-    """
-    Main request model for POST /api/generate endpoint.
+    """Workflow-defined request for POST /api/generate."""
 
-    Validates all incoming generation requests from the orchestrator.
-    """
-
-    # Workflow-baseline required fields
     action_id: int = Field(
         ...,
         ge=0,
@@ -252,128 +121,6 @@ class GenerateRequest(BaseModel):
     )
     learner_level: LearnerLevel = Field(..., description="Target reading/complexity level")
 
-    # ---------------------------------------------------------------------
-    # Advanced fields intentionally hidden from the public baseline schema.
-    # Keep these lines commented for future reintegration/reference.
-    # ---------------------------------------------------------------------
-    # session_id: UUID = Field(..., description="Unique session identifier")
-    # confidence: float = Field(
-    #     ..., ge=0.0, le=1.0, description="Orchestrator confidence in this action (0.0-1.0)"
-    # )
-    # state_vector: StateVector = Field(..., description="Real-time learner state information")
-    # learner_id: Optional[UUID] = Field(
-    #     None,
-    #     description="Optional learner identifier used by mastery/TTS/avatar generators",
-    # )
-    # voice_profile: Optional[str] = Field(
-    #     None,
-    #     min_length=1,
-    #     description=(
-    #         "Optional voice profile selector or base64-encoded 10s WAV sample used for Kokoro"
-    #     ),
-    # )
-    # source_image: Optional[str] = Field(
-    #     None,
-    #     min_length=1,
-    #     max_length=2048,
-    #     description="Optional source image path/URL hint for avatar generation",
-    # )
-    # learner_profile: Optional[LearnerProfile] = Field(
-    #     None, description="Learner-specific preferences and accommodations"
-    # )
-    # concept: Optional[str] = Field(
-    #     None,
-    #     min_length=1,
-    #     max_length=200,
-    #     validation_alias=AliasChoices("concept", "concept_id"),
-    #     description="Explicit concept override (if different from slide_content)",
-    # )
-    # content_type: Optional[ContentType] = Field(
-    #     None, description="Specific content type for action_id=3 (visual generation)"
-    # )
-    # request_id: Optional[str] = Field(None, description="Client-provided request ID for tracing")
-
-    def _extra(self, *keys: str, default: Any = None) -> Any:
-        extras = self.model_extra or {}
-        for key in keys:
-            value = extras.get(key)
-            if value is not None:
-                return value
-        return default
-
-    def resolved_session_id(self) -> str:
-        raw = self._extra("session_id")
-        if raw is None:
-            return str(uuid4())
-        try:
-            return str(UUID(str(raw)))
-        except Exception:
-            return str(uuid4())
-
-    def resolved_state_vector(self) -> StateVector:
-        raw = self._extra("state_vector")
-        if raw is None:
-            return StateVector()
-        if isinstance(raw, StateVector):
-            return raw
-        if isinstance(raw, dict):
-            try:
-                return StateVector.model_validate(raw)
-            except Exception:
-                return StateVector()
-        return StateVector()
-
-    def resolved_confidence(self) -> float:
-        raw = self._extra("confidence", default=0.5)
-        try:
-            return max(0.0, min(1.0, float(raw)))
-        except Exception:
-            return 0.5
-
-    def resolved_concept(self) -> Optional[str]:
-        raw = self._extra("concept", "concept_id")
-        if raw is None:
-            return None
-        concept = str(raw).strip()
-        return concept or None
-
-    def resolved_content_type(self) -> Optional[str]:
-        raw = self._extra("content_type")
-        if raw is None:
-            return None
-        normalized = str(raw).strip().lower()
-        return ContentType(normalized).value if normalized in ContentType._value2member_map_ else None
-
-    def resolved_request_id(self) -> Optional[str]:
-        raw = self._extra("request_id")
-        if raw is None:
-            return None
-        request_id = str(raw).strip()
-        return request_id or None
-
-    def resolved_learner_id(self) -> Optional[str]:
-        raw = self._extra("learner_id")
-        if raw is None:
-            return None
-        try:
-            return str(UUID(str(raw)))
-        except Exception:
-            return None
-
-    def resolved_voice_profile(self) -> Optional[str]:
-        raw = self._extra("voice_profile")
-        if raw is None:
-            return None
-        voice_profile = str(raw).strip()
-        return voice_profile or None
-
-    def resolved_source_image(self) -> Optional[str]:
-        raw = self._extra("source_image")
-        if raw is None:
-            return None
-        source_image = str(raw).strip()
-        return source_image or None
-
     @field_validator("action_id")
     @classmethod
     def validate_action_id(cls, v: int) -> int:
@@ -383,8 +130,7 @@ class GenerateRequest(BaseModel):
         return v
 
     model_config = ConfigDict(
-        extra="allow",
-        populate_by_name=True,
+        extra="forbid",
         json_schema_extra={
             "example": {
                 "action_id": 2,
@@ -407,7 +153,6 @@ class PrefetchRequest(BaseModel):
         ...,
         min_length=1,
         max_length=3,
-        validation_alias=AliasChoices("top_actions", "action_candidates"),
         description="Action IDs to prefetch (ordered by Q-value)",
     )
     slide_content: str = Field(
@@ -415,16 +160,6 @@ class PrefetchRequest(BaseModel):
     )
     learner_level: LearnerLevel = Field(
         default=LearnerLevel.GRADE8, description="Learner's current level"
-    )
-    content_type: Optional[ContentType] = Field(
-        None, description="Optional content type hint for action_id=3 prefetch"
-    )
-    concept: Optional[str] = Field(
-        None,
-        min_length=1,
-        max_length=200,
-        validation_alias=AliasChoices("concept", "concept_id"),
-        description="Optional concept hint used by visual generators",
     )
 
     @field_validator("top_actions")
@@ -437,11 +172,11 @@ class PrefetchRequest(BaseModel):
         return v
 
     model_config = ConfigDict(
-        populate_by_name=True,
+        extra="forbid",
         json_schema_extra={
             "example": {
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
-                "action_candidates": [3, 4, 2],
+                "top_actions": [3, 4, 2],
                 "slide_content": "Mitochondria are the powerhouse of the cell...",
                 "learner_level": "grade8",
             }

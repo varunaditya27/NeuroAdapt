@@ -42,7 +42,7 @@ _STOPWORDS = {
 }
 
 _POOL_LOCK = threading.Lock()
-_DB_POOL: SimpleConnectionPool | None = None
+_DB_POOL: Any = None
 _DB_POOL_DSN: str | None = None
 
 
@@ -57,7 +57,7 @@ def _max_pool_connections() -> int:
         return 8
 
 
-def _get_pool(db_url: str) -> SimpleConnectionPool | None:
+def _get_pool(db_url: str) -> Any:
     global _DB_POOL, _DB_POOL_DSN
     if SimpleConnectionPool is None:
         return None

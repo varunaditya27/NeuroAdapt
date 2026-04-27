@@ -2,25 +2,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from models.request_schemas import GenerateRequest, PrefetchRequest, StateVector
+from models.request_schemas import GenerateRequest, PrefetchRequest
 from orchestration import action_router as ar
 from orchestration.action_router import route_and_generate, start_prefetch
-
-
-def _base_state(**overrides):
-    state = {
-        "cognitive_load": 0.5,
-        "regression_count": 2,
-        "hyperfocus_composite": 0.2,
-        "eye_gaze_stability": 0.6,
-        "attention_switching": 0.4,
-        "time_on_task": 120,
-        "engagement_level": 0.6,
-        "micro_pause_ratio": 0.1,
-        "idle_time_bonus": 0.0,
-    }
-    state.update(overrides)
-    return StateVector(**state)
 
 
 def test_route_hyperfocus_preempts_to_hold():
@@ -28,12 +12,14 @@ def test_route_hyperfocus_preempts_to_hold():
         action_id=2,
         slide_content="Photosynthesis is a biochemical process.",
         learner_level="grade8",
-        session_id=uuid4(),
-        confidence=0.8,
-        state_vector=_base_state(hyperfocus_composite=0.9),
     )
 
+    # With strict workflow request schema we force preemption via gate patch.
+    original_gate = ar.check_hyperfocus
+    ar.check_hyperfocus = lambda **_kwargs: (True, 0.9, "hyperfocus_entered")
     routed = route_and_generate(request)
+    ar.check_hyperfocus = original_gate
+
     assert routed["no_content"] is True
     assert routed["action_id"] == 0
     assert routed["hyperfocus_override"] is True
@@ -44,9 +30,6 @@ def test_route_action_one_returns_chunks():
         action_id=1,
         slide_content="Sentence one. Sentence two.",
         learner_level="grade8",
-        session_id=uuid4(),
-        confidence=0.7,
-        state_vector=_base_state(),
     )
 
     routed = route_and_generate(request)
@@ -88,9 +71,6 @@ def test_route_action_two_uses_plain_learner_level(monkeypatch):
         action_id=2,
         slide_content="Dense concept paragraph for simplification.",
         learner_level="grade5",
-        session_id=uuid4(),
-        confidence=0.8,
-        state_vector=_base_state(),
     )
 
     routed = route_and_generate(request)
@@ -98,7 +78,7 @@ def test_route_action_two_uses_plain_learner_level(monkeypatch):
     assert captured["target_level"] == "grade5"
 
 
-def test_route_action_three_normalizes_stem_content_type(monkeypatch):
+def test_route_action_three_inferrs_stem_from_slide_content(monkeypatch):
     called = {"manim": 0, "image": 0}
 
     def fake_manim(*_args, **_kwargs):
@@ -119,12 +99,8 @@ def test_route_action_three_normalizes_stem_content_type(monkeypatch):
 
     request = GenerateRequest(
         action_id=3,
-        slide_content="Explain momentum conservation.",
+        slide_content="Explain momentum conservation in physics.",
         learner_level="grade8",
-        session_id=uuid4(),
-        confidence=0.85,
-        state_vector=_base_state(),
-        content_type="stem",
     )
 
     routed = route_and_generate(request)
@@ -144,9 +120,6 @@ def test_action_two_timeout_includes_fallback_metadata(monkeypatch):
         action_id=2,
         slide_content="Dense text for timeout fallback.",
         learner_level="grade8",
-        session_id=uuid4(),
-        confidence=0.8,
-        state_vector=_base_state(),
     )
 
     routed = route_and_generate(request)

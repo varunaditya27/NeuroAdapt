@@ -2,114 +2,55 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
 from models.request_schemas import GenerateRequest, PrefetchRequest
 
 
-def _state_vector() -> dict:
-    return {
-        "cognitive_load": 0.4,
-        "regression_count": 1,
-        "hyperfocus_composite": 0.2,
-        "eye_gaze_stability": 0.7,
-        "attention_switching": 0.3,
-        "time_on_task": 120,
-        "engagement_level": 0.6,
-        "micro_pause_ratio": 0.1,
-        "idle_time_bonus": 0.0,
-    }
-
-
-def test_generate_request_accepts_concept_id_alias():
+def test_generate_request_accepts_workflow_minimal_shape():
     req = GenerateRequest.model_validate(
         {
             "action_id": 2,
             "slide_content": "Conservation of energy describes...",
             "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.8,
-            "state_vector": _state_vector(),
-            "concept_id": "conservation_of_energy",
         }
     )
 
-    assert req.resolved_concept() == "conservation_of_energy"
+    assert req.action_id == 2
+    assert req.learner_level.value == "grade8"
 
 
-def test_prefetch_request_accepts_concept_id_alias():
+def test_generate_request_rejects_non_workflow_fields():
+    with pytest.raises(ValidationError):
+        GenerateRequest.model_validate(
+            {
+                "action_id": 3,
+                "slide_content": "Draw a free-body diagram.",
+                "learner_level": "grade8",
+                "content_type": "stem",
+            }
+        )
+
+
+def test_prefetch_request_accepts_minimal_shape():
     req = PrefetchRequest.model_validate(
         {
             "session_id": str(uuid4()),
-            "action_candidates": [3],
+            "top_actions": [3],
             "slide_content": "Newton's second law states...",
-            "concept_id": "newton_second_law",
         }
     )
 
     assert req.top_actions == [3]
-    assert req.concept == "newton_second_law"
 
 
-def test_generate_request_accepts_stem_and_general_content_types():
-    stem_req = GenerateRequest.model_validate(
-        {
-            "action_id": 3,
-            "slide_content": "Draw a free-body diagram.",
-            "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.82,
-            "state_vector": _state_vector(),
-            "content_type": "stem",
-        }
-    )
-    general_req = GenerateRequest.model_validate(
-        {
-            "action_id": 3,
-            "slide_content": "Summarize the causes of World War I.",
-            "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.82,
-            "state_vector": _state_vector(),
-            "content_type": "general",
-        }
-    )
-
-    assert stem_req.resolved_content_type() == "stem"
-    assert general_req.resolved_content_type() == "general"
-
-
-def test_generate_request_allows_missing_hyperfocus_composite():
-    state = _state_vector()
-    state.pop("hyperfocus_composite", None)
-
-    req = GenerateRequest.model_validate(
-        {
-            "action_id": 2,
-            "slide_content": "Explain osmosis in simple terms.",
-            "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.75,
-            "state_vector": state,
-        }
-    )
-
-    assert req.resolved_state_vector().hyperfocus_composite == 0.0
-
-
-def test_generate_request_accepts_voice_profile_and_avatar_source_fields():
-    req = GenerateRequest.model_validate(
-        {
-            "action_id": 3,
-            "slide_content": "Explain this concept with a talking avatar.",
-            "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "learner_id": str(uuid4()),
-            "confidence": 0.88,
-            "state_vector": _state_vector(),
-            "voice_profile": "af_bella",
-            "source_image": "/tmp/source_avatar.png",
-        }
-    )
-
-    assert req.resolved_learner_id() is not None
-    assert req.resolved_voice_profile() == "af_bella"
-    assert req.resolved_source_image() == "/tmp/source_avatar.png"
+def test_prefetch_request_rejects_alias_and_extras():
+    with pytest.raises(ValidationError):
+        PrefetchRequest.model_validate(
+            {
+                "session_id": str(uuid4()),
+                "action_candidates": [3],
+                "slide_content": "Newton's second law states...",
+            }
+        )

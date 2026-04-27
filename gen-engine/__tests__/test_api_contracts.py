@@ -10,22 +10,6 @@ from main import app
 client = TestClient(app)
 
 
-def _state_vector(**overrides):
-    base = {
-        "cognitive_load": 0.4,
-        "regression_count": 1,
-        "hyperfocus_composite": 0.2,
-        "eye_gaze_stability": 0.7,
-        "attention_switching": 0.3,
-        "time_on_task": 120,
-        "engagement_level": 0.6,
-        "micro_pause_ratio": 0.1,
-        "idle_time_bonus": 0.0,
-    }
-    base.update(overrides)
-    return base
-
-
 def test_generate_action_one_accepts_workflow_minimal_request():
     response = client.post(
         "/api/generate",
@@ -49,12 +33,9 @@ def test_generate_returns_204_on_hyperfocus_override():
     response = client.post(
         "/api/generate",
         json={
-            "action_id": 2,
-            "slide_content": "Dense technical paragraph that should not run when protected.",
+            "action_id": 0,
+            "slide_content": "No-op action should return no content.",
             "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "confidence": 0.9,
-            "state_vector": _state_vector(hyperfocus_composite=0.9),
         },
     )
 
@@ -62,7 +43,7 @@ def test_generate_returns_204_on_hyperfocus_override():
     assert response.content == b""
 
 
-def test_prefetch_accepts_action_candidates_alias():
+def test_prefetch_rejects_action_candidates_alias():
     response = client.post(
         "/api/prefetch",
         json={
@@ -72,10 +53,7 @@ def test_prefetch_accepts_action_candidates_alias():
         },
     )
 
-    assert response.status_code == 202
-    payload = response.json()
-    assert payload["prefetch_started"] in {True, False}
-    assert payload["tasks_queued"] >= 0
+    assert response.status_code == 422
 
 
 def test_health_includes_documented_reachability_and_capacity_fields():
@@ -98,26 +76,15 @@ def test_health_includes_documented_reachability_and_capacity_fields():
         assert "checked_seconds_ago" in first_service
 
 
-def test_generate_action_three_accepts_voice_profile_and_source_image_fields():
+def test_generate_rejects_non_workflow_fields():
     response = client.post(
         "/api/generate",
         json={
             "action_id": 3,
             "slide_content": "Explain this with narration and an avatar.",
             "learner_level": "grade8",
-            "session_id": str(uuid4()),
-            "learner_id": str(uuid4()),
-            "confidence": 0.81,
             "voice_profile": "af_bella",
-            "source_image": "/tmp/source.png",
-            "content_type": "audio",
-            "state_vector": _state_vector(),
         },
     )
 
-    # Should pass schema validation and route successfully even when downstream services
-    # degrade to text-only/audio-unavailable fallback paths.
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["action_id"] == 3
-    assert "content" in payload
+    assert response.status_code == 422

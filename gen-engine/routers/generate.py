@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -120,9 +119,6 @@ async def generate_content(request: GenerateRequest) -> GenerateResponse | Respo
     response = GenerateResponse(
         action_id=int(routed.get("action_id", request.action_id)),
         content=ContentPayload(**payload),
-        generation_time_ms=generation_time_ms,
-        warning=routed.get("warning"),
-        timestamp=datetime.utcnow().isoformat() + "Z",
     )
 
     _record_generate_metrics(
