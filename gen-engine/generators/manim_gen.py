@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import logging
 import os
 import re
@@ -140,6 +141,32 @@ def _extract_python_code(text: str) -> str:
     return text.strip()
 
 
+def _extract_narration(raw_llm_output: str) -> dict | None:
+    """Extract NARRATION JSON comment from raw LLM output (before code extraction).
+    
+    Format: # NARRATION: {"script": "...", "beats": [{"at_s": 0.0, "text": "..."}, ...]}
+    
+    Returns:
+        Dict with 'script' (str) and 'beats' (list) or None if not found/invalid.
+    """
+    match = re.search(
+        r"#\s*NARRATION:\s*(\{.*?\})\s*\n",
+        raw_llm_output,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+        if isinstance(data.get("script"), str) and data["script"].strip():
+            if not isinstance(data.get("beats"), list):
+                data["beats"] = []
+            return data
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    return None
+
+
 def _call_llm(prompt: str, system: str, timeout_seconds: float = 600.0) -> str:
     """Call LLM via dynamic provider (Groq or Ollama)."""
     return call_llm(
@@ -151,9 +178,61 @@ def _call_llm(prompt: str, system: str, timeout_seconds: float = 600.0) -> str:
     )
 
 
+def _get_video_metadata(video_path: str | None) -> dict | None:
+    """Extract video duration, frame rate, and frame count using ffprobe.
+    
+    Returns dict with keys: duration_s, fps, frame_count, or None on error.
+    """
+    if not video_path or shutil.which("ffprobe") is None:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=duration,r_frame_rate,nb_read_packets",
+                "-of", "json",
+                video_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        stream = data.get("streams", [{}])[0]
+        
+        duration_s = float(stream.get("duration", 0))
+        frame_rate_str = stream.get("r_frame_rate", "60/1")
+        
+        # Parse frame rate (e.g., "60/1" or "24000/1001")
+        try:
+            num, den = map(int, frame_rate_str.split("/"))
+            fps = num / den if den != 0 else 60.0
+        except (ValueError, ZeroDivisionError):
+            fps = 60.0
+        
+        frame_count = int(duration_s * fps) if duration_s > 0 else 0
+        
+        return {
+            "duration_s": round(duration_s, 3),
+            "fps": round(fps, 2),
+            "frame_count": frame_count,
+        }
+    except Exception as exc:
+        logger.warning(f"Failed to extract video metadata: {exc}")
+        return None
+
+
 def _render_scene(
     scene_code: str, output_stem: str, timeout_seconds: float = 600.0
-) -> Tuple[bool, str, str | None]:
+) -> Tuple[bool, str, str | None, dict | None]:
+    """Render Manim scene to MP4 and extract metadata.
+    
+    Returns (success, logs, output_path, metadata_dict)
+    """
     logger.debug(f"Rendering scene with code length: {len(scene_code)}, timeout: {timeout_seconds}s")
     with tempfile.TemporaryDirectory(prefix="neuroadapt_manim_") as temp_dir:
         temp_path = Path(temp_dir)
@@ -173,19 +252,19 @@ def _render_scene(
             )
         except subprocess.TimeoutExpired:
             logger.error(f"Manim render timed out after {timeout_seconds}s")
-            return False, "manim render timed out", None
+            return False, "manim render timed out", None, None
 
         if proc.returncode != 0:
             logs = proc.stderr or ""
             if proc.stdout:
                 logs = f"{logs}\n{proc.stdout}".strip()
             logger.error(f"Manim render failed (rc={proc.returncode}): {logs[:500]}")
-            return False, (logs or "manim render failed"), None
+            return False, (logs or "manim render failed"), None, None
 
         matches = list(temp_path.rglob(f"{output_stem}.mp4"))
         if not matches:
             logger.error(f"Render finished but mp4 not found for stem={output_stem}")
-            return False, "render finished but mp4 not found", None
+            return False, "render finished but mp4 not found", None, None
 
         logger.debug(f"Found mp4 at {matches[0]}, moving to {_VIDEO_DIR}")
         out_path = _VIDEO_DIR / f"{output_stem}.mp4"
@@ -193,8 +272,11 @@ def _render_scene(
         logs = proc.stdout or ""
         if proc.stderr:
             logs = f"{logs}\n{proc.stderr}".strip()
-        logger.info(f"Manim render succeeded, saved to {out_path}")
-        return True, (logs or "ok"), str(out_path)
+        
+        # Extract video metadata for sync
+        metadata = _get_video_metadata(str(out_path))
+        logger.info(f"Manim render succeeded, saved to {out_path}; metadata={metadata}")
+        return True, (logs or "ok"), str(out_path), metadata
 
 
 def _duration_ms(video_path: str | None) -> int:
@@ -280,6 +362,7 @@ def generate_manim_animation(
     writer_attempts = 0
     reviewer_attempts = 0
     last_error = ""
+    narration: dict | None = None
 
     for attempt in range(max_retries + 1):
         writer_attempts += 1
@@ -300,6 +383,11 @@ def generate_manim_animation(
                     timeout_seconds=450,
                 )
                 logger.debug(f"Manim: Writer LLM returned {len(generated)} chars")
+                
+                # Extract narration metadata FIRST (before code extraction)
+                narration = _extract_narration(generated)
+                if narration:
+                    logger.debug(f"Manim: Extracted narration script ({len(narration['script'])} chars), {len(narration.get('beats', []))} beats")
 
                 def _normalize_scene_class_name(scene_code: str) -> str:
                     return re.sub(
@@ -349,13 +437,15 @@ def generate_manim_animation(
             logger.debug("Manim: Safety check passed")
 
         logger.debug(f"Manim: Rendering scene (attempt {attempt + 1}/{max_retries + 1})")
-        ok, message, output_path = _render_scene(scene_code, key, timeout_seconds=60)
+        ok, message, output_path, video_metadata = _render_scene(scene_code, key, timeout_seconds=60)
         if ok:
             logger.info(f"Manim: Successfully rendered to {output_path}")
-            duration_ms = _duration_ms(output_path)
+            duration_ms = int((video_metadata.get("duration_s", 0) if video_metadata else 0) * 1000)
             return {
                 "video_url": output_path,
                 "duration_ms": duration_ms,
+                "narration": narration,  # Include narration beats for sync
+                "video_metadata": video_metadata,  # Include frame rate, duration for FFmpeg sync
                 "cache_hit": False,
                 "writer_attempts": writer_attempts,
                 "reviewer_attempts": reviewer_attempts,

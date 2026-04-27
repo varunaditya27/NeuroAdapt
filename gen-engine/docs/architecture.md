@@ -190,7 +190,7 @@ sequenceDiagram
     participant OL as Ollama (Gemma 4 E2B)
     participant FK as textstat (FK scorer)
 
-    BE->>GE: POST /api/generate<br/>{action_id: 2, slide_content, learner_level, state_vector}
+    BE->>GE: POST /api/generate<br/>{action_id: 2, slide_content, learner_level}<br/>(optional compatibility extras: session_id/state_vector/...)
     GE->>HG: Check hyperfocus_composite
     HG-->>GE: Not in hyperfocus (< 0.75)
     GE->>RT: Route action_id = 2

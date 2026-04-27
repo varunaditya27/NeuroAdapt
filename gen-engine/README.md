@@ -419,14 +419,7 @@ Generate content in target format based on action_id.
 {
   "action_id": 2,
   "slide_content": "Photosynthesis is the process by which...",
-  "learner_level": "grade8",
-  "session_id": "uuid-string",
-  "confidence": 0.74,
-  "state_vector": {
-    "cognitive_load": 0.82,
-    "regression_count": 7,
-    "hyperfocus_composite": 0.15
-  }
+    "learner_level": "grade8"
 }
 ```
 
@@ -446,8 +439,9 @@ Generate content in target format based on action_id.
             }
         ]
   },
-  "generation_time_ms": 2847,
-  "cache_hit": false
+    "generation_time_ms": 2847,
+    "warning": null,
+    "timestamp": "2026-04-22T11:30:00.000000Z"
 }
 ```
 
@@ -464,14 +458,16 @@ Generate content in target format based on action_id.
 ```
 
 **Supported action_ids:**
-- `0`: Hold course (no generation, returns 204)
-- `1`: Chunked reading mode (Tier 1)
-- `2`: Text simplification (Tier 2)
-- `3`: Visual/Audio/Video (Tier 3 — routed by content type)
-- `4`: Gamified quiz (Tier 2)
-- `5`: Sensory break (Tier 1 — returns pre-built templates)
+- `0`: Hold (no generation, returns 204)
+- `1`: Nudge (chunked reading mode, Tier 1)
+- `2`: Simplify (Tier 2)
+- `3`: Video (multimodal: image/animation/audio/avatar, Tier 3)
+- `4`: Game (gamified quiz, Tier 2)
+- `5`: Break (sensory reset template, Tier 1)
 
 **Compatibility notes:**
+- Public baseline request requires only `{action_id, slide_content, learner_level}`.
+- Advanced fields are still accepted for compatibility (`session_id`, `state_vector`, `confidence`, `concept`/`concept_id`, `content_type`, `learner_id`, `voice_profile`, `source_image`).
 - `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
 - `concept_id` is accepted as an alias for `concept`.
 

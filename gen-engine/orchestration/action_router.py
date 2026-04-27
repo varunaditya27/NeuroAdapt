@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 from generators.analogy_engine import generate_analogies
@@ -18,6 +21,9 @@ from models.request_schemas import GenerateRequest, PrefetchRequest
 from orchestration.hyperfocus_gate import check_hyperfocus
 from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_with_timeout
 from orchestration.prefetch_manager import prefetch_manager
+from utils.av_sync import generate_webvtt_metadata
+
+logger = logging.getLogger(__name__)
 
 _LAST_CSS_BY_SESSION: Dict[str, Dict[str, str]] = {}
 _MAX_SESSION_CSS_ENTRIES = max(100, int(os.getenv("MAX_SESSION_CSS_ENTRIES", "5000")))
@@ -246,8 +252,57 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
                 return {**image_res, "warning": f"Animation failed: {error}"}
 
             if anim_res.get("video_url"):
-                audio_res = generate_tts(slide_content, speed=0.85, session_id=session_id)
-                return {**anim_res, **audio_res}
+                # Extract narration metadata if available
+                narration = anim_res.get("narration")
+                video_duration_s = anim_res.get("duration_ms", 0) / 1000.0
+                video_metadata = anim_res.get("video_metadata") or {"fps": 60.0}
+                
+                # Use narration script if available, otherwise use slide_content
+                tts_text = slide_content
+                speed = 0.85  # default
+                
+                if narration and narration.get("script"):
+                    tts_text = narration["script"]
+                    # Calculate speed to match video duration
+                    # Natural speech ≈ 2.5 words/second; aim to fill 90% of video
+                    word_count = len(tts_text.split())
+                    if video_duration_s > 0:
+                        target_duration_s = video_duration_s * 0.9
+                        natural_duration_s = word_count / 2.5
+                        if natural_duration_s > 0:
+                            speed = max(0.5, min(2.0, natural_duration_s / target_duration_s))
+                
+                audio_res = generate_tts(
+                    tts_text,
+                    speed=speed,
+                    session_id=session_id,
+                )
+                
+                # Attach animation beats to audio response for sync
+                response = {**anim_res, **audio_res}
+                if narration and narration.get("beats"):
+                    response["animation_beats"] = narration["beats"]
+                
+                # Generate WebVTT metadata file for frontend sync
+                video_url = str(anim_res.get("video_url", ""))
+                if video_url:
+                    try:
+                        # Create VTT path next to video file (same stem)
+                        video_path = Path(video_url)
+                        vtt_path = video_path.parent / f"{video_path.stem}_sync.vtt"
+                        
+                        generate_webvtt_metadata(
+                            output_path=vtt_path,
+                            duration_ms=anim_res.get("duration_ms", 0),
+                            fps=video_metadata.get("fps", 60.0),
+                            animation_beats=narration.get("beats") if narration else None,
+                            word_timestamps=audio_res.get("word_timestamps"),
+                        )
+                        response["metadata_vtt"] = str(vtt_path)
+                    except Exception as exc:
+                        logger.warning(f"WebVTT generation failed: {exc}")
+                
+                return response
 
             # animation function already returned fallback details
             if anim_res.get("image_url") and not anim_res.get("audio_url"):

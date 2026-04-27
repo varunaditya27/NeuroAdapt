@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import threading
+from pathlib import Path
 from typing import Any, List
+
+from orchestration.llm_provider import call_llm
 
 try:
     import psycopg2
@@ -13,6 +18,9 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     psycopg2 = None
     SimpleConnectionPool = None
+
+logger = logging.getLogger(__name__)
+PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 _STOPWORDS = {
     "the",
@@ -153,7 +161,109 @@ def _encouragement_for(tier: str) -> str:
     return "Awesome—you're ready for transfer-level questions."
 
 
-def _question_set(concept_key: str, terms: List[str], tier: str) -> list[dict[str, Any]]:
+def _load_quiz_prompt() -> str:
+    """Load quiz generator prompt."""
+    prompt_file = PROMPTS_DIR / "quiz_generator.txt"
+    try:
+        return prompt_file.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.warning(f"Failed to load quiz_generator.txt: {exc}")
+        return ""
+
+
+def _generate_quiz_with_llm(
+    concept: str,
+    slide_content: str,
+    tier: str,
+    timeout_seconds: float = 450.0,
+) -> list[dict[str, Any]] | None:
+    """Generate concept-specific quiz questions using LLM.
+    
+    Args:
+        concept: The topic being assessed (e.g., "photosynthesis")
+        slide_content: The educational content for context
+        tier: Difficulty tier - "struggling", "developing", or "advanced"
+        timeout_seconds: LLM call timeout
+        
+    Returns:
+        List of 3 quiz question dicts, or None on error
+    """
+    system_prompt = _load_quiz_prompt()
+    if not system_prompt:
+        logger.warning("Quiz generator prompt not loaded")
+        return None
+    
+    # Map tier to difficulty
+    difficulty_map = {
+        "struggling": "easy",
+        "developing": "medium",
+        "advanced": "hard",
+    }
+    difficulty = difficulty_map.get(tier, "medium")
+    
+    user_prompt = (
+        f"Concept: {concept}\n"
+        f"Difficulty: {difficulty}\n"
+        f"Slide Content:\n{slide_content[:1500]}\n\n"
+        f"Generate 3 domain-specific quiz questions for this concept at {difficulty} difficulty."
+    )
+    
+    try:
+        logger.debug(f"Quiz: Generating LLM questions for '{concept}' at {difficulty} tier")
+        response = call_llm(
+            prompt=user_prompt,
+            system=system_prompt,
+            temperature=0.3,
+            max_tokens=2000,
+            timeout_seconds=timeout_seconds,
+            response_format={"type": "json_object"},
+        )
+        
+        # Parse JSON array from response
+        questions = json.loads(response)
+        if isinstance(questions, list) and len(questions) == 3:
+            # Validate structure
+            for q in questions:
+                if not all(k in q for k in ["id", "text", "options", "correct_index", "difficulty"]):
+                    logger.warning(f"Quiz: Invalid question structure: {q}")
+                    return None
+                if not isinstance(q["options"], list) or len(q["options"]) != 4:
+                    logger.warning(f"Quiz: Question must have exactly 4 options: {q}")
+                    return None
+            logger.debug(f"Quiz: Successfully generated 3 LLM questions for '{concept}'")
+            return questions
+        else:
+            logger.warning(f"Quiz: Expected 3 questions, got {len(questions) if isinstance(questions, list) else 'non-list'}")
+            return None
+    except json.JSONDecodeError as exc:
+        logger.warning(f"Quiz: LLM response was not valid JSON: {exc}")
+        return None
+    except Exception as exc:
+        logger.warning(f"Quiz: LLM generation failed: {exc}")
+        return None
+
+
+def _question_set(
+    concept_key: str,
+    terms: List[str],
+    tier: str,
+    slide_content: str = "",
+) -> list[dict[str, Any]]:
+    """Generate quiz questions for the concept, preferring LLM generation with fallback templates."""
+    
+    # Try LLM generation first if we have content
+    if slide_content and slide_content.strip():
+        llm_questions = _generate_quiz_with_llm(
+            concept=concept_key,
+            slide_content=slide_content,
+            tier=tier,
+            timeout_seconds=300.0,
+        )
+        if llm_questions:
+            return llm_questions
+        logger.info(f"Quiz: LLM generation failed for '{concept_key}', falling back to templates")
+    
+    # Fallback to hardcoded templates
     fallback_terms = terms + ["process", "system", "energy", "model"]
     t1, t2, t3 = fallback_terms[0], fallback_terms[1], fallback_terms[2]
 
@@ -287,7 +397,7 @@ def generate_quiz(
 
     mastery_score = query_mastery_score(session_id=session_id, concept_key=concept_key)
     tier = determine_difficulty_tier(mastery_score)
-    questions = _question_set(concept_key, terms, tier)
+    questions = _question_set(concept_key, terms, tier, slide_content)
 
     return {
         "quiz_json": questions,

@@ -354,25 +354,13 @@ Generate content for confirmed action.
 {
   "action_id": 2,
   "slide_content": "The mitochondria is the powerhouse of the cell...",
-  "learner_level": "grade8",
-  "session_id": "uuid-v4",
-  "confidence": 0.74,
-  "concept_id": "mitochondria_intro",
-  "state_vector": {
-    "cognitive_load": 0.82,
-    "scroll_velocity": 0.03,
-    "keystroke_cadence": 4.2,
-    "idle_time": 1.8,
-    "response_latency": 3.1,
-    "preference_delta": 0.15,
-    "regression_count": 7,
-    "gaze_dispersion": 0.22,
-    "hyperfocus_composite": 0.45
-  }
+  "learner_level": "grade8"
 }
 ```
 
 Notes:
+- Public baseline requires only `action_id`, `slide_content`, and `learner_level`.
+- Advanced compatibility fields are still accepted (`session_id`, `confidence`, `state_vector`, `learner_id`, `voice_profile`, `source_image`, `content_type`, `concept`/`concept_id`).
 - `concept_id` is accepted as an alias for `concept`.
 - For action 3, `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
 
@@ -393,11 +381,8 @@ Notes:
     ]
   },
   "generation_time_ms": 2847,
-  "cache_hit": false,
-  "hyperfocus_override": false,
-  "timestamp": "2026-04-19T10:25:11.123456Z",
-  "session_id": "uuid-v4",
-  "request_id": "req_1713517271123"
+  "warning": null,
+  "timestamp": "2026-04-19T10:25:11.123456Z"
 }
 ```
 
