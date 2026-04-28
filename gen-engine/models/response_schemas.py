@@ -175,6 +175,16 @@ class PromptHealth(BaseModel):
     )
 
 
+class LLMProviderInfo(BaseModel):
+    """LLM provider status reported by /health."""
+
+    name: str = Field(..., description="Provider name (e.g., 'ollama', 'openai')")
+    healthy: bool = Field(..., description="Whether the provider is currently reachable/healthy")
+    error: Optional[str] = Field(None, description="Last error message from provider check, if any")
+
+    model_config = ConfigDict(extra="allow")
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint."""
 
@@ -182,6 +192,7 @@ class HealthResponse(BaseModel):
     timestamp: str = Field(..., description="Health check timestamp")
     ollama_reachable: bool = Field(..., description="Whether Ollama is currently reachable")
     kokoro_reachable: bool = Field(..., description="Whether Kokoro TTS is currently reachable")
+    llm_provider: Optional[LLMProviderInfo] = Field(None, description="Active LLM provider status")
     disk_space_gb: float = Field(..., ge=0.0, description="Free disk space in GB")
     cache_size_mb: float = Field(..., ge=0.0, description="Generation cache footprint in MB")
     services: Dict[str, ServiceHealth] = Field(..., description="Per-service health details")

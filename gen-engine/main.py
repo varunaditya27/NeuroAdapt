@@ -359,7 +359,7 @@ async def root() -> dict[str, Any]:
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check() -> JSONResponse:
+async def health_check() -> HealthResponse:
     """Detailed health check endpoint for Kubernetes probes."""
     _refresh_services(force=False)
 
@@ -392,26 +392,23 @@ async def health_check() -> JSONResponse:
 
     # Always return 200 OK as long as gen-engine app itself is running
     # External service failures don't make the app unhealthy
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": overall_status,
-            "timestamp": datetime.now().isoformat(),
-            "ollama_reachable": ollama_reachable,
-            "kokoro_reachable": kokoro_reachable,
-            "llm_provider": llm_provider_info,
-            "disk_space_gb": disk_space_gb,
-            "cache_size_mb": cache_size_mb,
-            "services": services_status,
-            "cache": {
-                "entries": len(app_state["cache"]),
-                "max_size": CONFIG["CACHE_MAX_SIZE"],
-            },
-            "prompts": {
-                "loaded": len(app_state.get("prompts", {})),
-                "required": len(REQUIRED_PROMPTS),
-                "missing_required": app_state.get("prompt_health", {}).get("missing_required", []),
-            },
+    return HealthResponse(
+        status=overall_status,
+        timestamp=datetime.now().isoformat(),
+        ollama_reachable=ollama_reachable,
+        kokoro_reachable=kokoro_reachable,
+        llm_provider=llm_provider_info,
+        disk_space_gb=disk_space_gb,
+        cache_size_mb=cache_size_mb,
+        services=services_status,
+        cache={
+            "entries": len(app_state["cache"]),
+            "max_size": CONFIG["CACHE_MAX_SIZE"],
+        },
+        prompts={
+            "loaded": len(app_state.get("prompts", {})),
+            "required": len(REQUIRED_PROMPTS),
+            "missing_required": app_state.get("prompt_health", {}).get("missing_required", []),
         },
     )
 
