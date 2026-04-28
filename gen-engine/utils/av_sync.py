@@ -104,7 +104,8 @@ def generate_webvtt_metadata(
     
     # Add word-level TTS cues (for closed captions / sync markers)
     for word_info in word_timestamps:
-        text = word_info.get("text", "")
+        # Accept "word" (Kokoro/gen-engine payload) or "text" (backward compat)
+        text = word_info.get("word") or word_info.get("text", "")
         start_ms = word_info.get("start_ms", 0)
         end_ms = word_info.get("end_ms", start_ms + 100)
         

@@ -364,6 +364,14 @@ def generate_manim_animation(
     last_error = ""
     narration: dict | None = None
 
+    def _normalize_scene_class_name(scene_code: str) -> str:
+        return re.sub(
+            r"class\s+\w+\s*\(\s*Scene\s*\)\s*:",
+            "class NeuroScene(Scene):",
+            scene_code,
+            count=1,
+        )
+
     for attempt in range(max_retries + 1):
         writer_attempts += 1
         if attempt == 0:
@@ -389,13 +397,6 @@ def generate_manim_animation(
                 if narration:
                     logger.debug(f"Manim: Extracted narration script ({len(narration['script'])} chars), {len(narration.get('beats', []))} beats")
 
-                def _normalize_scene_class_name(scene_code: str) -> str:
-                    return re.sub(
-                        r"class\s+\w+\s*\(\s*Scene\s*\)\s*:",
-                        "class NeuroScene(Scene):",
-                        scene_code,
-                        count=1,
-                    )
                 extracted = _extract_python_code(generated)
                 if extracted:
                     scene_code = _normalize_scene_class_name(extracted)
