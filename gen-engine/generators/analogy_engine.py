@@ -160,6 +160,13 @@ def _try_llm(
     return None
 
 
+def _try_ollama(
+    concept: str, slide_content: str, timeout_seconds: float = 450
+) -> list[dict[str, Any]] | None:
+    """Backward-compatible alias retained for tests and legacy callers."""
+    return _try_llm(concept=concept, slide_content=slide_content, timeout_seconds=timeout_seconds)
+
+
 def generate_analogies(
     concept: str,
     slide_content: str,
@@ -167,7 +174,7 @@ def generate_analogies(
 ) -> dict[str, Any]:
     """Return 3 analogies in distinct domains."""
     concept_value = concept or "the concept"
-    analogies = _try_llm(concept_value, slide_content) or _template_analogies(concept_value)
+    analogies = _try_ollama(concept_value, slide_content) or _template_analogies(concept_value)
 
     warning: str | None = None
     max_similarity = _max_pair_similarity(analogies)

@@ -115,6 +115,11 @@ def _call_llm(prompt: str, timeout_seconds: float = 450.0) -> str:
     )
 
 
+def _call_ollama(prompt: str, timeout_seconds: float = 450.0) -> str:
+    """Backward-compatible alias retained for tests and legacy callers."""
+    return _call_llm(prompt=prompt, timeout_seconds=timeout_seconds)
+
+
 def _cache_get(key: str) -> dict[str, Any] | None:
     return _CACHE.get(key)
 
@@ -150,7 +155,7 @@ def simplify_text(text: str, target_level: str = "grade8", session_id: str | Non
         prompt = _build_prompt(base_prompt, text, normalized_level, strict=strict)
 
         try:
-            candidate = _call_llm(prompt, timeout_seconds=60.0 if not strict else 90.0)
+            candidate = _call_ollama(prompt, timeout_seconds=60.0 if not strict else 90.0)
         except Exception as exc:
             if attempt < 2:
                 continue

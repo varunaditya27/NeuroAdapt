@@ -339,11 +339,11 @@ sequenceDiagram
 
 | Modality | Target | Hard Timeout | Fallback |
 |---|---|---|---|
-| Text simplification (Gemma 4 E2B local) | < 3s | 5s | Serve original text |
+| Text simplification (Groq/Ollama) | best effort | 450s | Serve original text |
 | Analogy generation (Gemma 4 E2B) | < 2s | 3s | Skip analogy |
-| Audio TTS (Kokoro) | < 2s | 3s | Serve text only |
-| Image generation (Stable Diffusion) | < 8s | 12s | Serve text + audio |
-| Manim animation (local render) | < 30s | 45s | Serve static image + audio |
+| Audio TTS (Kokoro) | best effort | 120s | Serve text only |
+| Image generation (Stable Diffusion) | best effort | 60s | Serve text + audio |
+| Manim animation (local render) | best effort | 600s | Serve static image + audio |
 | LivePortrait avatar (local) | < 15s | 20s | Serve illustrated narrative |
 
 ---
@@ -408,20 +408,24 @@ pytest __tests__/test_prefetch.py -v -k "test_timeout_fallback"
 
 ---
 
-## � API Reference
+## 📚 API Reference
 
 ### `POST /api/generate`
 
-Generate content in target format based on action_id.
+Generate content in target format based on `action_id`.
 
 **Request:**
 ```json
 {
   "action_id": 2,
-  "slide_content": "Photosynthesis is the process by which...",
+    "slide_content": "Photosynthesis is the process by which plants convert light energy into chemical energy.",
     "learner_level": "grade8"
 }
 ```
+
+Strict contract:
+- Required fields only: `action_id`, `slide_content`, `learner_level`
+- Unknown fields are rejected (`422`)
 
 **Response (action_id = 2 — Text Simplification):**
 ```json
@@ -438,10 +442,7 @@ Generate content in target format based on action_id.
                 "word_count": 7
             }
         ]
-  },
-    "generation_time_ms": 2847,
-    "warning": null,
-    "timestamp": "2026-04-22T11:30:00.000000Z"
+    }
 }
 ```
 
@@ -450,9 +451,7 @@ Generate content in target format based on action_id.
 {
     "action_id": 2,
     "content": {
-        "simplified_text": "<original text>",
-        "fallback_stage": "text_simplify_timeout",
-        "generation_mode": "text_fallback"
+        "simplified_text": "<original text>"
     }
 }
 ```
@@ -465,11 +464,11 @@ Generate content in target format based on action_id.
 - `4`: Game (gamified quiz, Tier 2)
 - `5`: Break (sensory reset template, Tier 1)
 
-**Compatibility notes:**
-- Public baseline request requires only `{action_id, slide_content, learner_level}`.
-- Advanced fields are still accepted for compatibility (`session_id`, `state_vector`, `confidence`, `concept`/`concept_id`, `content_type`, `learner_id`, `voice_profile`, `source_image`).
-- `content_type` accepts canonical values (`image`, `animation`, `audio`, `avatar`) plus compatibility hints (`stem`, `general`, `visual`, `video`).
-- `concept_id` is accepted as an alias for `concept`.
+Status codes:
+- `200`: Content generated
+- `204`: No content branch (`action_id=0` or hyperfocus protection)
+- `422`: Validation failure
+- `500`: Internal generation/routing failure
 
 ### `POST /api/prefetch`
 
@@ -477,16 +476,17 @@ Queue speculative generation for top candidates.
 
 ```json
 {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
     "top_actions": [3, 2],
-    "session_id": "uuid-string",
-    "slide_content": "Newton's first law states...",
-    "learner_level": "grade8",
-    "content_type": "stem"
+    "slide_content": "Newton's first law states that an object stays in motion unless acted on by a force.",
+    "learner_level": "grade8"
 }
 ```
 
-Alias support:
-- `action_candidates` is accepted as an alias for `top_actions`.
+Strict contract:
+- Required: `session_id`, `top_actions`, `slide_content`
+- Optional: `learner_level`
+- Unknown fields are rejected (`422`)
 
 ### `GET /api/prefetch/status`
 
@@ -504,11 +504,10 @@ Query params:
     "status": "ready",
     "cache_hit": true,
     "content": {
-        "video_url": "/tmp/animations/newton.mp4",
-        "audio_url": "/tmp/audio/newton.wav"
+        "video_url": "/tmp/animations/newton.mp4"
     },
     "action_id": 3,
-    "session_id": "uuid-string"
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 

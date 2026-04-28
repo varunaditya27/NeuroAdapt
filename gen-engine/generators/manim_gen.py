@@ -437,7 +437,17 @@ def generate_manim_animation(
             logger.debug("Manim: Safety check passed")
 
         logger.debug(f"Manim: Rendering scene (attempt {attempt + 1}/{max_retries + 1})")
-        ok, message, output_path, video_metadata = _render_scene(scene_code, key, timeout_seconds=60)
+        render_result = _render_scene(scene_code, key, timeout_seconds=60)
+        if len(render_result) == 4:
+            ok, message, output_path, video_metadata = render_result
+        elif len(render_result) == 3:
+            ok, message, output_path = render_result
+            video_metadata = None
+        else:
+            ok = False
+            message = "Invalid render response shape"
+            output_path = None
+            video_metadata = None
         if ok:
             logger.info(f"Manim: Successfully rendered to {output_path}")
             duration_ms = int((video_metadata.get("duration_s", 0) if video_metadata else 0) * 1000)
