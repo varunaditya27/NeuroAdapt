@@ -24,7 +24,7 @@ try:
     from quantum.pennylane_vqc import ClassicalDDQN, QuantumDDQN
 except ModuleNotFoundError:
     from pennylane_vqc import ClassicalDDQN, QuantumDDQN
-from shared_config import (
+from backend.shared_config import (
     BATCH_SIZE,
     EPSILON_DECAY_EP,
     EPSILON_END,

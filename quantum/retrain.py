@@ -46,7 +46,7 @@ except ModuleNotFoundError:
     from pennylane_vqc import ClassicalDDQN, QuantumDDQN
     from reward import compute_reward, reload_weights
 
-from shared_config import (
+from backend.shared_config import (
     BATCH_SIZE,
     REPLAY_CAPACITY,
     TAU,

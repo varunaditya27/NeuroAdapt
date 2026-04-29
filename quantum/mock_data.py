@@ -56,7 +56,7 @@ repo_root = Path(__file__).resolve().parents[1]
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from shared_config import N_ACTIONS, ACTION_NAMES, STATE_VECTOR_DIM
+from backend.shared_config import N_ACTIONS, ACTION_NAMES, STATE_VECTOR_DIM
 
 # Import the oracle from train.py — MUST be identical to what the trainer uses.
 # If the import fails (e.g. PennyLane not installed in this env), we inline a

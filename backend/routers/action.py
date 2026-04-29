@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from backend.db import redis_client
 from backend.models.action import ActionResponse
-from shared_config import ACTION_NAMES, ACTION_SPACE, CONFIDENCE_GATE, STATE_VECTOR_DIM
+from backend.shared_config import ACTION_NAMES, ACTION_SPACE, CONFIDENCE_GATE, STATE_VECTOR_DIM
 
 router = APIRouter(prefix="/api", tags=["action"])
 
