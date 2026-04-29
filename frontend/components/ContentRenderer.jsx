@@ -10,17 +10,24 @@ import QuizRenderer from './QuizRenderer';
  * ContentRenderer Component
  * Routes between different content delivery modes with smooth transitions
  * Includes confidence gate to show thinking skeleton when confidence is low
+ * Polls /api/action endpoint to receive adaptive actions
  */
 export default function ContentRenderer({
   mode = 'text',
   content = {},
   confidence = 1.0,
+  sessionId = null,
+  actionPollInterval = 5000,
   onBreakTrigger,
   onQuizComplete = () => {},
   onChunkComplete = () => {},
+  onActionReceived = () => {},
 }) {
   const [fadeOut, setFadeOut] = useState(false);
   const [displayMode, setDisplayMode] = useState(mode);
+  const [action, setAction] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   // Get confidence gate threshold from env or default to 0.60
   const confidenceGate =
@@ -55,6 +62,47 @@ export default function ContentRenderer({
       onBreakTrigger();
     }
   }, [displayMode, onBreakTrigger]);
+
+  // Poll /api/action endpoint to receive adaptive actions
+  useEffect(() => {
+    if (!sessionId) {
+      return; // Skip polling if no session ID provided
+    }
+
+    let pollInterval;
+
+    const pollAction = async () => {
+      setActionLoading(true);
+      try {
+        const response = await fetch(`/api/action?session_id=${encodeURIComponent(sessionId)}`);
+        if (!response.ok) {
+          throw new Error(`Action poll failed: ${response.status}`);
+        }
+        const actionData = await response.json();
+        setAction(actionData);
+        setActionError(null);
+        onActionReceived(actionData);
+        
+        // Log action for debugging
+        console.log(
+          `[ContentRenderer] Received action: ${actionData.action_name} (confidence: ${actionData.confidence.toFixed(2)}, gated: ${actionData.gated})`
+        );
+      } catch (err) {
+        setActionError(err.message);
+        console.error('[ContentRenderer] Action polling error:', err);
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
+    // Initial poll
+    pollAction();
+
+    // Set up interval for subsequent polls
+    pollInterval = setInterval(pollAction, actionPollInterval);
+
+    return () => clearInterval(pollInterval);
+  }, [sessionId, actionPollInterval, onActionReceived]);
 
   // Show thinking skeleton if confidence below gate
   if (confidence < confidenceGate) {
