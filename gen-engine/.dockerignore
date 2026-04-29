@@ -1,0 +1,24 @@
+# Model weights and large data files
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.onnx
+*.pkl
+weights/
+data/
+
+# Cache and build artifacts
+__pycache__/
+*.pyc
+.cache/
+cache/
+logs/
+
+# Dev files
+.git/
+*.md
+__tests__/
+.vscode/
+node_modules/

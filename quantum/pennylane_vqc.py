@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 try:
-    from shared_config import N_ACTIONS, N_QUBITS
+    from backend.shared_config import N_ACTIONS, N_QUBITS
 except ModuleNotFoundError:
     import sys
     from pathlib import Path
@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    from shared_config import N_ACTIONS, N_QUBITS
+    from backend.shared_config import N_ACTIONS, N_QUBITS
 
 try:
     import pennylane as qml

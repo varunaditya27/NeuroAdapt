@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 
 try:
-    from shared_config import N_QUBITS
+    from backend.shared_config import N_QUBITS
 except ModuleNotFoundError:
     import sys
     from pathlib import Path as PathlibPath
@@ -21,7 +21,7 @@ except ModuleNotFoundError:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    from shared_config import N_QUBITS
+    from backend.shared_config import N_QUBITS
 
 try:
     import pennylane as qml

@@ -1,25 +1,286 @@
-version: "3.9"
+# NeuroAdapt — Infra Compose
+# Single source of truth for the full stack (dev + hackathon demo).
+#
+# USAGE:
+#   cp .env.example .env
+#   docker compose -f infra/docker-compose.yml up --build -d
+#
+# SERVICES:
+#   postgres      — Shared database (port 5432)
+#   redis         — Backend cache / session store (port 6379)
+#   kokoro-tts    — Audio synthesis (port 8880)
+#   gen-engine    — Generative synthesis API (port 8001)
+#   backend       — Core FastAPI (port 8000)
+#   frontend      — Next.js UI (port 3000)
+#   prometheus    — Metrics scraper (port 9090)
+#   quantum       — Retraining job; opt-in via --profile quantum
+#
+# REQUIREMENTS:
+#   Docker Engine 24+, Docker Compose v2.20+, ~30GB disk
 
 services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
   postgres:
-    image: postgres:16
-    container_name: neuroadapt_postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: neuroadapt
-      POSTGRES_PASSWORD: neuroadapt
-      POSTGRES_DB: neuroadapt
+      POSTGRES_USER: ${POSTGRES_USER:-neuroadapt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neuroadapt_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-neuroadapt}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - ./db/gen-engine-init.sql:/docker-entrypoint-initdb.d/10-gen-engine-init.sql:ro
+      - ./db/backend-schemas.sql:/docker-entrypoint-initdb.d/20-backend-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neuroadapt} -d ${POSTGRES_DB:-neuroadapt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 
   redis:
-    image: redis:7
-    container_name: neuroadapt_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Ephemeral — no persistence needed for dev/demo
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # ── Generation Stack ──────────────────────────────────────────────────────
+
+  kokoro-tts:
+    build:
+      context: ../gen-engine/services/kokoro
+      dockerfile: Dockerfile
     restart: unless-stopped
+    ports:
+      - "8880:8880"
+    volumes:
+      - kokoro_voices:/app/voices
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  gen-engine:
+    build:
+      context: ../gen-engine
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    # Secrets (GROQ_API_KEY, etc.) come exclusively from env_file.
+    # Only service-discovery and non-secret config live here so that
+    # ${VAR} shell expansion never silently nulls out secrets.
+    env_file:
+      - ./.env
+    environment:
+      KOKORO_TTS_URL: http://kokoro-tts:8880
+      TTS_URL: http://kokoro-tts:8880
+      DATABASE_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      POSTGRES_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROMETHEUS_ENABLED: "true"
+    # Bind mounts so logs/cache are directly tail-able from the host
+    volumes:
+      - ../gen-engine/logs:/home/app/logs
+      - ../gen-engine/cache:/home/app/cache
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # ── Application Layer ─────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # service_started (not service_healthy) — backend handles gen-engine
+      # unavailability gracefully at the request level, not at startup.
+      # This shaves ~30s off cold boot time.
+      gen-engine:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql+asyncpg://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      GEN_ENGINE_URL: http://gen-engine:8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      gen-engine:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      # NEXT_PUBLIC_* are embedded into the JS bundle and run in the browser.
+      # They MUST resolve to localhost (or a real domain), never to Docker
+      # network hostnames like "backend:8000" which the browser cannot reach.
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      NEXT_PUBLIC_GEN_ENGINE_URL: ${NEXT_PUBLIC_GEN_ENGINE_URL:-http://localhost:8001}
+      # Internal URLs for SSR / Next.js Route Handlers (never reaches browser)
+      BACKEND_INTERNAL_URL: http://backend:8000
+      GEN_ENGINE_INTERNAL_URL: http://gen-engine:8001
+    healthcheck:
+      # --spider checks HTTP status; -qO- exits 0 even on 500 errors
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # ── Observability ─────────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    # No depends_on — Prometheus tolerates unreachable scrape targets gracefully.
+    # Waiting for backend + gen-engine to be healthy only delays the stack.
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # ── Batch Jobs ────────────────────────────────────────────────────────────
+
+  quantum:
+    build:
+      context: ../quantum
+      dockerfile: Dockerfile
+    # Opt-in only: docker compose ... --profile quantum up quantum
+    profiles: ["quantum"]
+    # Batch job — do not respawn after training completes
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${QUANTUM_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+    volumes:
+      - ../quantum/checkpoints:/app/quantum/checkpoints
+      - ../quantum/data:/app/quantum/data:ro
+    networks:
+      - neuroadapt
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+networks:
+  neuroadapt:
+    driver: bridge
+
 
 volumes:
   postgres_data:
+  prometheus_data:
+  kokoro_voices:

@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   env: {
     NEXT_PUBLIC_TELEMETRY_INTERVAL: process.env.TELEMETRY_INTERVAL || '30000',
     NEXT_PUBLIC_CONFIDENCE_GATE: process.env.CONFIDENCE_GATE || '0.60',

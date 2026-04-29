@@ -74,8 +74,4 @@ __tests__/.cache/
 # GPU/CUDA
 *.so
 
-# Docker
-.dockerignore
-docker-compose.override.yml
-
 graphify-out

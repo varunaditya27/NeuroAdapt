@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from shared_config import ACTION_SPACE, STATE_VECTOR_DIM
+from backend.shared_config import ACTION_SPACE, STATE_VECTOR_DIM
 
 
 class FeedbackPayload(BaseModel):
