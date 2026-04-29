@@ -39,11 +39,11 @@ quantum/
 ├── reward.py               # Full reward function (YAML-configurable weights)
 ├── mock_data.py            # 3 synthetic learner archetypes for pre-training
 ├── visualise_circuit.py    # qml.draw → PNG circuit diagram for report
+├── ablation_classical.py   # VQC vs classical dense layer — convergence comparison
 │
 ├── ablations/
-│   ├── ablation_a.py       # Remove Focus Persistence signal — measure Pref Delta impact
-│   ├── ablation_b.py       # Reduce action space to 3 — API cost vs engagement
-│   └── ablation_c.py       # VQC vs classical dense layer — convergence comparison
+│   ├── ablation_a.py       # Zero out each signal — measure Pref Delta impact
+│   └── ablation_b.py       # Reduce action space to 3 — API cost vs engagement
 │
 ├── configs/
 │   ├── reward_weights.yaml # Configurable reward term weights
@@ -167,8 +167,8 @@ archetype data via mock_data.py]
     B --> C[Episode begins:
 load learner state]
     C --> D[Observer posts state vector]
-    D --> E[Boltzmann exploration:
-sample action ∝ softmax Q-values]
+    D --> E[Epsilon-greedy exploration:
+sample random action with probability ε]
     E --> F[Execute action → receive reward
 from reward.py]
     F --> G[Store s, a, r, s', done
@@ -192,7 +192,7 @@ Log to W&B]
     N -->|No| D
 ```
 
-> 💡 **Boltzmann exploration** is used instead of ε-greedy because neurodivergent learners are real people — aggressive random exploration during early episodes could disrupt sessions that are going well. Boltzmann always favours higher Q-value actions even during exploration.
+> 💡 **Epsilon-greedy exploration** is used during offline training to balance exploration and stability while the policy is trained on synthetic datasets.
 
 ---
 
@@ -214,7 +214,7 @@ Three ablations validate the design choices:
 
 | Ablation | What Changes | What It Measures |
 |---|---|---|
-| **A** | Remove Focus Persistence (S3) from state vector | Impact on Preference Delta convergence speed |
+| **A** | Zero-out each Observer signal one at a time | Impact on Preference Delta convergence speed |
 | **B** | Reduce action space: 6 → 3 (hold, simplify, break) | API cost savings vs engagement quality tradeoff |
 | **C** | Replace VQC with `nn.Linear(5,5)` (same param count) | **Quantum advantage: convergence epochs to Δ < 0.1** |
 
@@ -230,20 +230,23 @@ cd quantum
 # Install requirements
 pip install -r requirements.txt
 
+# Generate synthetic archetype data
+python mock_data.py --episodes 500 --steps 20 --out quantum/data
+
 # Pre-train on synthetic archetypes
-python train.py --config configs/training_config.yaml --data synthetic
+python -m quantum.train --data-dir quantum/data --episodes 200 --steps-per-episode 20
 
 # Fine-tune on POC cohort data (after Phase 4)
 python retrain.py --learner-id <uuid> --epochs 50
 
 # Run Ablation A (Observer Signal Importance)
-python ablations/ablation_a.py
+python -m quantum.ablations.ablation_a --episodes 300 --steps-per-episode 20
 
 # Run Ablation B (Action Space Reduction)
-python ablations/ablation_b.py
+python -m quantum.ablations.ablation_b --episodes 300
 
 # Run Ablation C (Quantum Advantage vs Classical)
-python ablation_classical.py --episodes 300
+python -m quantum.ablation_classical --episodes 300 --steps-per-episode 20
 ```
 
 ---

@@ -19,9 +19,13 @@ docs/
 ├── architecture.md             # System architecture + data flow narrative
 ├── api_reference.md            # All endpoints, request/response schemas, error codes
 ├── quantum_guide.md            # VQC implementation guide (theory + code walkthrough)
+├── quantum_methodology.md      # Report-ready methodology section for quantum core
 ├── observer_signals.md         # All 5 signals: formulas, computation, privacy guarantees
 ├── reward_design.md            # Reward function rationale + YAML config reference
 ├── educator_dashboard.md       # Educator UI guide + privacy constraints (≥5 student rule)
+├── integration_checklist.md    # Full stack integration checklist + acceptance checks
+├── wandb_dashboard.md          # W&B dashboard configuration notes
+├── pitch_deck_slides_4_6.md    # Draft slide notes for pitch deck (slides 4-6)
 │
 ├── ethics/
 │   ├── participant_info_sheet.md  # POC participant information sheet
