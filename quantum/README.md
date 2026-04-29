@@ -227,14 +227,23 @@ Three ablations validate the design choices:
 ```bash
 cd quantum
 
+# Install requirements
+pip install -r requirements.txt
+
 # Pre-train on synthetic archetypes
 python train.py --config configs/training_config.yaml --data synthetic
 
 # Fine-tune on POC cohort data (after Phase 4)
 python retrain.py --learner-id <uuid> --epochs 50
 
-# Run ablation C
-python ablations/ablation_c.py --episodes 300 --export-plot
+# Run Ablation A (Observer Signal Importance)
+python ablations/ablation_a.py
+
+# Run Ablation B (Action Space Reduction)
+python ablations/ablation_b.py
+
+# Run Ablation C (Quantum Advantage vs Classical)
+python ablation_classical.py --episodes 300
 ```
 
 ---
