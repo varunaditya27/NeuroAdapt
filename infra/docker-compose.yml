@@ -1,25 +1,196 @@
-version: "3.9"
-
 services:
   postgres:
-    image: postgres:16
-    container_name: neuroadapt_postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: neuroadapt
-      POSTGRES_PASSWORD: neuroadapt
-      POSTGRES_DB: neuroadapt
+      POSTGRES_USER: ${POSTGRES_USER:-neuroadapt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neuroadapt_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-neuroadapt}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - ./db/gen-engine-init.sql:/docker-entrypoint-initdb.d/10-gen-engine-init.sql:ro
+      - ./db/backend-schemas.sql:/docker-entrypoint-initdb.d/20-backend-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neuroadapt} -d ${POSTGRES_DB:-neuroadapt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - neuroadapt
 
   redis:
-    image: redis:7
-    container_name: neuroadapt_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - neuroadapt
+
+  kokoro-tts:
+    build:
+      context: ../gen-engine/services/kokoro
+      dockerfile: Dockerfile
     restart: unless-stopped
+    ports:
+      - "8880:8880"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    volumes:
+      - kokoro_voices:/app/voices
+    networks:
+      - neuroadapt
+
+  gen-engine:
+    build:
+      context: ../gen-engine
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    environment:
+      KOKORO_TTS_URL: http://kokoro-tts:8880
+      TTS_URL: http://kokoro-tts:8880
+      DATABASE_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      POSTGRES_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROMETHEUS_ENABLED: "true"
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
+    env_file:
+      - ./.env
+    volumes:
+      - gen_engine_logs:/home/app/logs
+      - gen_engine_cache:/home/app/cache
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - neuroadapt
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gen-engine:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      GEN_ENGINE_URL: http://gen-engine:8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - neuroadapt
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      gen-engine:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://backend:8000}
+      NEXT_PUBLIC_GEN_ENGINE_URL: ${NEXT_PUBLIC_GEN_ENGINE_URL:-http://gen-engine:8001}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - neuroadapt
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      gen-engine:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    networks:
+      - neuroadapt
+
+  quantum:
+    build:
+      context: ../quantum
+      dockerfile: Dockerfile
+    profiles: ["quantum"]
+    restart: "no"
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
+    volumes:
+      - ../quantum/checkpoints:/app/quantum/checkpoints
+      - ../quantum/data:/app/quantum/data
+    networks:
+      - neuroadapt
+
+networks:
+  neuroadapt:
+    driver: bridge
 
 volumes:
   postgres_data:
+  prometheus_data:
+  kokoro_voices:
+  gen_engine_logs:
+  gen_engine_cache:
