@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import EnergyBar from '@/components/EnergyBar';
 import PreferenceDelta from '@/components/PreferenceDelta';
+import { init as initObserver, destroy as destroyObserver, setPreferenceDelta } from '@/components/Observer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
+import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
 
 export default function Home() {
   const [view, setView] = useState('subjects'); // subjects | topics | lesson
@@ -13,6 +15,29 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('text');
+  const sessionIdRef = useRef(null);
+
+  // Initialize Observer on mount
+  useEffect(() => {
+    // Generate or retrieve session ID
+    const existingSessionId = sessionStorage.getItem('neuroAdapt_sessionId');
+    if (existingSessionId) {
+      sessionIdRef.current = existingSessionId;
+    } else {
+      // Generate new session ID (UUID-like format)
+      const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('neuroAdapt_sessionId', newSessionId);
+      sessionIdRef.current = newSessionId;
+    }
+
+    // Initialize Observer telemetry
+    initObserver();
+
+    return () => {
+      // Cleanup Observer on unmount
+      destroyObserver();
+    };
+  }, []);
 
   const selectedSubject = selectedSubjectId
     ? LESSON_CATALOGUE.find((s) => s.subjectId === selectedSubjectId)
@@ -58,6 +83,37 @@ export default function Home() {
   const handleNext = () => {
     if (!isLastSlide) {
       setCurrentSlideIndex(currentSlideIndex + 1);
+    }
+  };
+
+  /**
+   * Handle format selection from PreferenceDelta modal
+   * Calculates dynamic preference delta based on model prediction vs user choice
+   */
+  const handleFormatSelect = async (format) => {
+    setSelectedFormat(format);
+    
+    try {
+      // Compute preference delta based on model prediction vs user selection
+      // Pass current format as fallback for when API state isn't available yet
+      const dynamicPreferenceDelta = await computePreferenceDelta(
+        sessionIdRef.current,
+        format,
+        selectedFormat // current format before update
+      );
+
+      // Update Observer with the calculated preference delta
+      setPreferenceDelta(dynamicPreferenceDelta);
+
+      console.log('[Home] Format selected and preference delta updated:', {
+        previousFormat: selectedFormat,
+        newFormat: format,
+        preferenceDelta: dynamicPreferenceDelta,
+      });
+    } catch (error) {
+      console.error('[Home] Error updating preference delta:', error);
+      // Fallback: use neutral preference delta on error
+      setPreferenceDelta(0.5);
     }
   };
 
@@ -877,7 +933,7 @@ export default function Home() {
       {/* PreferenceDelta Modal */}
       <PreferenceDelta
         open={showPreferenceDelta}
-        onSelect={(format) => setSelectedFormat(format)}
+        onSelect={handleFormatSelect}
         onClose={() => setShowPreferenceDelta(false)}
       />
 

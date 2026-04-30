@@ -26,6 +26,7 @@ export default function ObserverDevPage() {
 
     // Set global callback for flush events
     window.__onObserverFlush = (data) => {
+      console.log('[ObserverDevPage] Received flush data:', data);
       setSignals({
         dwell: parseFloat(data.dwell),
         jitter: parseFloat(data.jitter),
@@ -35,6 +36,7 @@ export default function ObserverDevPage() {
         timestamp: data.timestamp,
       });
     };
+    console.log('[ObserverDevPage] Callback registered');
 
     return () => {
       destroy();

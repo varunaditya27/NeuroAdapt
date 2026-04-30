@@ -9,7 +9,7 @@ import { STATE_VECTOR_DIM, TELEMETRY_INTERVAL } from '../shared_config.js';
 // Module state
 let sessionId = null;
 let flushIntervalId = null;
-let lastStateVector = [0, 0, 1, 0, 0.5]; // Store last computed values [dwell, jitter, focus, stall, pref_delta]
+let lastStateVector = [0, 0, 1, 0, 1.0]; // Store last computed values [dwell, jitter, focus, stall, pref_delta]
 
 // 30-second window counters and state
 let timeOnSlideMs = 0;
@@ -17,7 +17,7 @@ let slideVisibilityStartTime = null;
 let lastInteractionTimestamp = Date.now();
 let mouseSamples = []; // Array of {timestamp, x, y}
 let visibilityHiddenCount = 0;
-let preferenceDelta = 0.5;
+let preferenceDelta = 1.0; // Initialize to 1.0: users staying in default text mode are rewarded
 
 // Constants
 const AVERAGE_READING_TIME_MS = 250; // ms per word
@@ -220,7 +220,8 @@ async function flush() {
       visibilityHiddenCount,
       lastInteractionTimestamp,
       now: Date.now(),
-      dwell, jitter, focus, stall, pref_delta
+      dwell, jitter, focus, stall, pref_delta,
+      timestamp: new Date().toLocaleTimeString(),
     });
 
     const payload = {
@@ -243,10 +244,14 @@ async function flush() {
 
     // Call debug callback if it exists
     if (typeof window.__onObserverFlush === 'function') {
-      window.__onObserverFlush({
+      const callbackData = {
         dwell, jitter, focus, stall, pref_delta,
         timestamp: new Date().toLocaleTimeString()
-      });
+      };
+      console.log('[Observer] Calling flush callback with data:', callbackData);
+      window.__onObserverFlush(callbackData);
+    } else {
+      console.log('[Observer] No flush callback registered');
     }
 
     // Store last state vector for Dashboard to read on mount
@@ -284,7 +289,16 @@ function init() {
  * Updated by other components in later phases.
  */
 function setPreferenceDelta(value) {
-  preferenceDelta = clamp(value, 0, 1);
+  const newValue = clamp(value, 0, 1);
+  const oldValue = preferenceDelta;
+  preferenceDelta = newValue;
+  
+  console.log('[Observer] Preference Delta Updated:', {
+    old: oldValue,
+    new: newValue,
+    changed: oldValue !== newValue,
+    timestamp: new Date().toLocaleTimeString(),
+  });
 }
 
 /**
