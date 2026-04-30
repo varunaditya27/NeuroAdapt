@@ -80,7 +80,7 @@ def _parse_state_vector(raw_state: object, field_name: str) -> list[float]:
         raise ValueError(f"Invalid {field_name}: values must be numeric") from exc
 
 
-def load_dataset_transitions(data_dir: str | Path) -> list[Transition]:
+def load_dataset_transitions(data_dir: str | Path, n_actions: int = N_ACTIONS) -> list[Transition]:
     dataset_dir = Path(data_dir)
     dataset_files = sorted(dataset_dir.glob("*.json"))
 
@@ -107,7 +107,7 @@ def load_dataset_transitions(data_dir: str | Path) -> list[Transition]:
             next_state = _parse_state_vector(item.get("next_state"), "next_state")
 
             action = int(item.get("action"))
-            if action < 0 or action >= N_ACTIONS:
+            if action < 0 or action >= n_actions:
                 raise ValueError(f"Invalid action at {dataset_file} index {index}: {action}")
 
             reward = float(item.get("reward"))
@@ -125,6 +125,7 @@ def evaluate_policy_pref_delta(
     net,
     transitions: list[Transition],
     sample_count: int = 32,
+    n_actions: int = N_ACTIONS,
 ) -> float:
     pref_deltas: list[float] = []
 
@@ -138,7 +139,7 @@ def evaluate_policy_pref_delta(
 
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
             predicted_action = int(net(state_tensor).argmax(dim=1).item())
-            pref_delta = abs(predicted_action - expected_action) / (N_ACTIONS - 1)
+            pref_delta = abs(predicted_action - expected_action) / (n_actions - 1)
             pref_deltas.append(pref_delta)
 
     return sum(pref_deltas) / float(len(pref_deltas))
@@ -148,12 +149,13 @@ def evaluate_policy_action_entropy(
     net,
     transitions: list[Transition],
     sample_count: int = 64,
+    n_actions: int = N_ACTIONS,
 ) -> float:
     if not transitions:
         return 0.0
 
     eval_batch = transitions[: min(sample_count, len(transitions))]
-    action_counts = [0 for _ in range(N_ACTIONS)]
+    action_counts = [0 for _ in range(n_actions)]
 
     with torch.no_grad():
         for state, _, _, _, _ in eval_batch:
@@ -263,11 +265,11 @@ def train_step(batch, online_net, target_net, optimiser, gamma: float = GAMMA) -
     return float(loss.item()), float(quantum_grad_norm)
 
 
-def _build_model(model_type: str, classical_hidden_dim: int = DEFAULT_CLASSICAL_HIDDEN_DIM):
+def _build_model(model_type: str, classical_hidden_dim: int = DEFAULT_CLASSICAL_HIDDEN_DIM, n_actions: int = N_ACTIONS):
     if model_type == "quantum":
-        return QuantumDDQN()
+        return QuantumDDQN(n_actions=n_actions)
     if model_type == "classical":
-        return ClassicalDDQN(hidden_dim=classical_hidden_dim)
+        return ClassicalDDQN(hidden_dim=classical_hidden_dim, n_actions=n_actions)
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 
@@ -306,17 +308,18 @@ def run_training(
     quantum_layer_lr: Optional[float] = None,
     quantum_head_lr: Optional[float] = None,
     reward_mode: str = "exp-distance",
+    n_actions: int = N_ACTIONS,
 ) -> TrainingResult:
     if seed is not None:
         random.seed(seed)
         torch.manual_seed(seed)
 
     rng = random.Random(seed)
-    dataset_transitions = load_dataset_transitions(data_dir)
+    dataset_transitions = load_dataset_transitions(data_dir, n_actions=n_actions)
     rng.shuffle(dataset_transitions)
 
-    online_net = _build_model(model_type, classical_hidden_dim=classical_hidden_dim)
-    target_net = _build_model(model_type, classical_hidden_dim=classical_hidden_dim)
+    online_net = _build_model(model_type, classical_hidden_dim=classical_hidden_dim, n_actions=n_actions)
+    target_net = _build_model(model_type, classical_hidden_dim=classical_hidden_dim, n_actions=n_actions)
     target_net.load_state_dict(online_net.state_dict())
 
     if model_type == "quantum":
@@ -386,7 +389,7 @@ def run_training(
                 state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
                 predicted_action = int(online_net(state_tensor).argmax(dim=1).item())
 
-            pref_delta = abs(predicted_action - action) / (N_ACTIONS - 1)
+            pref_delta = abs(predicted_action - action) / (n_actions - 1)
 
             # Only train once the buffer has enough diverse experiences
             if len(replay) >= MIN_REPLAY_SIZE:
@@ -406,11 +409,13 @@ def run_training(
             online_net,
             eval_transitions,
             sample_count=32,
+            n_actions=n_actions,
         )
         policy_action_entropy = evaluate_policy_action_entropy(
             online_net,
             eval_transitions,
             sample_count=64,
+            n_actions=n_actions,
         )
         mean_loss = (sum(losses) / len(losses)) if losses else 0.0
         mean_quantum_grad = (sum(episode_quantum_grads) / len(episode_quantum_grads)) if episode_quantum_grads else 0.0
@@ -488,6 +493,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quantum-layer-lr", type=float, default=None)
     parser.add_argument("--quantum-head-lr", type=float, default=None)
     parser.add_argument("--reward-mode", choices=["dataset", "exp-distance"], default="exp-distance")
+    parser.add_argument("--actions", type=int, default=N_ACTIONS, help="Number of actions (output head size). Default matches shared_config.")
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", type=str, default="neuroadapt-ddqn")
     return parser.parse_args()
@@ -513,6 +519,7 @@ def main() -> None:
         quantum_layer_lr=args.quantum_layer_lr,
         quantum_head_lr=args.quantum_head_lr,
         reward_mode=args.reward_mode,
+        n_actions=args.actions,
     )
 
 

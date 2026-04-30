@@ -81,7 +81,7 @@ if qml is not None:
         return [qml.expval(qml.PauliZ(i) if i % 2 == 0 else qml.PauliX(i)) for i in range(N_QUBITS)]
 
     class QuantumDDQN(nn.Module):
-        def __init__(self) -> None:
+        def __init__(self, n_actions: int = N_ACTIONS) -> None:
             super().__init__()
             # 5 layers * (N_QUBITS * 2) parameters
             self.num_layers = 5
@@ -98,7 +98,7 @@ if qml is not None:
             # Backward-compatible alias used by existing optimizer code.
             self.bn = self.norm
             
-            self.advantage = nn.Linear(N_QUBITS, N_ACTIONS)
+            self.advantage = nn.Linear(N_QUBITS, n_actions)
             self.value = nn.Linear(N_QUBITS, 1)
 
             with torch.no_grad():
@@ -129,16 +129,16 @@ else:
 
 
     class QuantumDDQN(nn.Module):
-        def __init__(self) -> None:
+        def __init__(self, n_actions: int = N_ACTIONS) -> None:
             super().__init__()
             raise RuntimeError("QuantumDDQN requires pennylane. Install quantum/requirements.txt")
 
 
 class ClassicalDDQN(nn.Module):
-    def __init__(self, hidden_dim: int = 64) -> None:
+    def __init__(self, hidden_dim: int = 64, n_actions: int = N_ACTIONS) -> None:
         super().__init__()
         self.feature = nn.Linear(N_QUBITS, hidden_dim)
-        self.advantage = nn.Linear(hidden_dim, N_ACTIONS)
+        self.advantage = nn.Linear(hidden_dim, n_actions)
         self.value = nn.Linear(hidden_dim, 1)
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
