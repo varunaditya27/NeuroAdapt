@@ -1,84 +1,69 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import EnergyBar from '@/components/EnergyBar';
+import PreferenceDelta from '@/components/PreferenceDelta';
+import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 
 export default function Home() {
-  const [activeModuleId, setActiveModuleId] = useState(1);
+  const [view, setView] = useState('subjects'); // subjects | topics | lesson
+  const [selectedSubjectId, setSelectedSubjectId] = useState(null);
+  const [selectedTopic, setSelectedTopic] = useState(null);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [showModal, setShowModal] = useState(false);
+  const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState('text');
 
-  const modules = [
-    { id: 1, name: 'Intro to Quantum Computing' },
-    { id: 2, name: 'Superposition & Entanglement' },
-    { id: 3, name: 'Quantum Gates' },
-    { id: 4, name: 'Quantum Algorithms' },
-    { id: 5, name: 'Real Applications' },
-  ];
+  const selectedSubject = selectedSubjectId
+    ? LESSON_CATALOGUE.find((s) => s.subjectId === selectedSubjectId)
+    : null;
 
-  const lessonContent = {
-    1: {
-      title: 'Introduction to Quantum Computing',
-      wordCount: 240,
-      paragraphs: [
-        'Quantum computing represents a paradigm shift in computational power, leveraging the principles of quantum mechanics to process information in fundamentally new ways. Unlike classical computers that use bits as their basic unit of information, quantum computers utilise quantum bits or qubits, which can exist in a superposition of both 0 and 1 simultaneously. This property allows quantum computers to explore multiple solutions in parallel, potentially solving certain problems exponentially faster than their classical counterparts.',
-        'The power of quantum computing stems from several key quantum phenomena. Superposition allows qubits to be in multiple states at once, exponentially increasing the computational space that can be explored. Entanglement links qubits together such that the state of one qubit instantaneously influences the others, enabling complex correlations that classical systems cannot achieve. Finally, interference allows quantum algorithms to amplify correct answers whilst cancelling out incorrect ones, guiding the computation towards the desired solution through carefully designed probability amplitudes.',
-        'Current quantum computers face significant challenges, including decoherence where environmental noise causes qubits to lose their quantum properties, and error rates that remain too high for many practical applications. However, the field is advancing rapidly with improvements in qubit stability, error correction codes, and algorithm development. Major companies and research institutions are investing heavily in quantum technology, and we are entering an era where hybrid classical-quantum systems may begin solving real-world problems in cryptography, optimisation, drug discovery, and artificial intelligence.',
-      ]
-    },
-    2: {
-      title: 'Superposition & Entanglement',
-      wordCount: 285,
-      paragraphs: [
-        'Superposition is one of the most fundamental principles of quantum mechanics. In classical systems, a bit must be either 0 or 1. In contrast, a quantum bit or qubit can exist in a superposition of both states simultaneously. This means that before measurement, a qubit is in a linear combination of 0 and 1 states, described mathematically by coefficients that determine the probability of observing each outcome.',
-        'Entanglement is another cornerstone of quantum mechanics that has no classical analogue. When two or more qubits become entangled, their quantum states are correlated in such a way that measuring one qubit instantaneously affects the state of the others, regardless of the distance between them. This phenomenon fascinated Einstein, who famously referred to it as "spooky action at a distance." Entanglement enables quantum computers to perform certain calculations far more efficiently than classical computers.',
-        'The combination of superposition and entanglement gives quantum computers their extraordinary computational power. While a classical computer with n bits can represent one of 2^n possible values at any given time, a quantum computer with n qubits can represent all 2^n values simultaneously. This exponential advantage is the key to quantum computing\'s potential for solving previously intractable problems in optimization, cryptography, and simulation.',
-      ]
-    },
-    3: {
-      title: 'Quantum Gates',
-      wordCount: 268,
-      paragraphs: [
-        'Quantum gates are the basic building blocks of quantum circuits, analogous to logic gates in classical computing. However, quantum gates operate on qubits and must preserve the quantum mechanical properties of superposition and entanglement. Single-qubit gates like the Pauli gates (X, Y, Z) and the Hadamard gate manipulate individual qubits, while multi-qubit gates like the CNOT gate create entanglement between qubits.',
-        'The Hadamard gate is particularly important in quantum computing because it creates superposition by transforming a definite qubit state into an equal superposition of 0 and 1. The Pauli-X gate acts as a quantum analog of the classical NOT gate, flipping the qubit state. The Pauli-Z gate introduces a phase shift, which is crucial for quantum algorithms. These gates, combined with rotation gates parameterized by angles, form a universal set that can implement any quantum computation.',
-        'Quantum circuit design involves carefully orchestrating sequences of gates to achieve desired computational outcomes. The CNOT (Controlled-NOT) gate is essential for creating entanglement between qubits. More complex operations can be decomposed into combinations of elementary gates. Understanding how to design efficient quantum circuits is fundamental to developing practical quantum algorithms and harnessing the power of quantum computers.',
-      ]
-    },
-    4: {
-      title: 'Quantum Algorithms',
-      wordCount: 301,
-      paragraphs: [
-        'Quantum algorithms are procedures designed to solve specific problems using quantum computers. The most famous quantum algorithm is Shor\'s algorithm, which can factor large numbers exponentially faster than any known classical algorithm. This algorithm has profound implications for cryptography, as the security of many modern encryption schemes relies on the difficulty of factoring large numbers. Other important quantum algorithms include Grover\'s algorithm for searching unsorted databases and the Quantum Fourier Transform, which is the foundation for many quantum algorithms.',
-        'Grover\'s algorithm provides a quadratic speedup for searching an unsorted database of N items. While a classical computer would require O(N) operations to search the entire database, Grover\'s algorithm accomplishes this in O(√N) operations. This might not seem as dramatic as Shor\'s exponential speedup, but for large databases, the quadratic improvement can still be significant. The algorithm uses quantum amplitude amplification to increase the probability of measuring the correct answer.',
-        'The development of quantum algorithms requires a deep understanding of both quantum mechanics and computer science. Quantum algorithms leverage unique quantum phenomena like superposition, entanglement, and interference to achieve computational advantages. As quantum hardware continues to improve, researchers are discovering new algorithms and optimizing existing ones to solve practical problems in drug discovery, materials science, optimization, and machine learning.',
-      ]
-    },
-    5: {
-      title: 'Real Applications',
-      wordCount: 256,
-      paragraphs: [
-        'Quantum computing has tremendous potential for real-world applications across multiple industries. In drug discovery, quantum computers can simulate molecular interactions and properties with unprecedented accuracy, potentially accelerating the development of new pharmaceuticals. Companies like IBM and Pfizer are already exploring quantum computing for drug development. In materials science, quantum computers can help design new materials with specific properties by accurately simulating quantum mechanical processes.',
-        'Financial institutions are investigating quantum computing for portfolio optimization and risk analysis. Quantum algorithms can explore a vast space of possible portfolios and find optimal solutions more efficiently than classical methods. Additionally, quantum computers could help with pricing complex financial derivatives and Monte Carlo simulations. Banks like JPMorgan Chase are already researching quantum algorithms for financial applications.',
-        'Optimization problems appear across industries, from logistics and supply chain management to manufacturing and energy distribution. Many of these problems are NP-hard, meaning they are computationally intractable for classical computers at scale. Quantum computers, particularly those using quantum annealing or variational algorithms, could provide significant advantages in solving these optimization challenges, leading to substantial cost savings and efficiency improvements across sectors.',
-      ]
-    }
+  const currentSlides = selectedTopic ? selectedTopic.lessonContent.slides : [];
+  const currentSlide = currentSlides[currentSlideIndex] || null;
+
+  const isFirstSlide = currentSlideIndex === 0;
+  const isLastSlide = currentSlideIndex === currentSlides.length - 1;
+
+  const handleSelectSubject = (subjectId) => {
+    setSelectedSubjectId(subjectId);
+    setView('topics');
+    setShowModal(false);
   };
 
-  const currentLesson = lessonContent[activeModuleId];
-  const isFirstLesson = activeModuleId === 1;
-  const isLastLesson = activeModuleId === modules.length;
+  const handleSelectTopic = (topic) => {
+    setSelectedTopic(topic);
+    setCurrentSlideIndex(0);
+    setView('lesson');
+  };
+
+  const handleBackToSubjects = () => {
+    setView('subjects');
+    setSelectedSubjectId(null);
+    setSelectedTopic(null);
+    setCurrentSlideIndex(0);
+  };
+
+  const handleBackToTopics = () => {
+    setView('topics');
+    setSelectedTopic(null);
+    setCurrentSlideIndex(0);
+  };
 
   const handlePrevious = () => {
-    if (!isFirstLesson) {
-      setActiveModuleId(activeModuleId - 1);
+    if (!isFirstSlide) {
+      setCurrentSlideIndex(currentSlideIndex - 1);
     }
   };
 
   const handleNext = () => {
-    if (!isLastLesson) {
-      setActiveModuleId(activeModuleId + 1);
+    if (!isLastSlide) {
+      setCurrentSlideIndex(currentSlideIndex + 1);
     }
   };
 
-  const progress = Math.round((activeModuleId / modules.length) * 100);
+  const progress = selectedTopic
+    ? Math.round(((currentSlideIndex + 1) / currentSlides.length) * 100)
+    : 0;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', paddingTop: '56px' }}>
@@ -98,8 +83,51 @@ export default function Home() {
           flexDirection: 'column',
         }}
       >
-        {/* Modules Section */}
         <div style={{ flex: 1, paddingLeft: '20px', paddingRight: '16px' }}>
+          {/* Back buttons */}
+          {view === 'topics' && (
+            <button
+              type="button"
+              onClick={handleBackToSubjects}
+              style={{
+                padding: '8px 0',
+                marginBottom: '20px',
+                color: 'var(--teal)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                backgroundColor: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                pointerEvents: 'auto',
+              }}
+            >
+              ← Back to Subjects
+            </button>
+          )}
+
+          {view === 'lesson' && (
+            <button
+              type="button"
+              onClick={handleBackToTopics}
+              style={{
+                padding: '8px 0',
+                marginBottom: '20px',
+                color: 'var(--teal)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                backgroundColor: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                pointerEvents: 'auto',
+              }}
+            >
+              ← Back to Topics
+            </button>
+          )}
+
+          {/* Sidebar title */}
           <div
             style={{
               fontSize: '10px',
@@ -110,46 +138,165 @@ export default function Home() {
               textTransform: 'uppercase',
             }}
           >
-            Lesson Modules
+            {view === 'subjects' && 'Subjects'}
+            {view === 'topics' && 'Topics'}
+            {view === 'lesson' && 'Slides'}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {modules.map((mod) => (
-              <button
-                key={mod.id}
-                type="button"
-                onClick={() => {
-                  console.log('Module switched to:', mod.name);
-                  setActiveModuleId(mod.id);
-                }}
-                style={{
-                  padding: '10px 12px',
-                  borderLeft: activeModuleId === mod.id ? '3px solid var(--teal)' : '3px solid transparent',
-                  paddingLeft: activeModuleId === mod.id ? '9px' : '12px',
-                  color: activeModuleId === mod.id ? 'var(--navy)' : 'var(--muted)',
-                  fontSize: '13px',
-                  fontWeight: activeModuleId === mod.id ? 500 : 400,
-                  cursor: 'pointer',
-                  opacity: 1,
-                  transition: 'all 200ms ease',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  textAlign: 'left',
-                  pointerEvents: 'auto',
-                }}
-                onMouseEnter={(e) => {
-                  if (activeModuleId !== mod.id) {
+
+          {/* Subjects list */}
+          {view === 'subjects' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {LESSON_CATALOGUE.map((subject) => (
+                <button
+                  key={subject.subjectId}
+                  type="button"
+                  onClick={() => handleSelectSubject(subject.subjectId)}
+                  style={{
+                    padding: '10px 12px',
+                    color: 'var(--navy)',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    textAlign: 'left',
+                    pointerEvents: 'auto',
+                    transition: 'all 200ms ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--teal)';
+                  }}
+                  onMouseLeave={(e) => {
                     e.currentTarget.style.color = 'var(--navy)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeModuleId !== mod.id) {
-                    e.currentTarget.style.color = 'var(--muted)';
-                  }
-                }}
-              >
-                {mod.name}
-              </button>
-            ))}
+                  }}
+                >
+                  {subject.subject}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Topics list */}
+          {view === 'topics' && selectedSubject && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {selectedSubject.topics.map((topic) => (
+                <button
+                  key={topic.topicId}
+                  type="button"
+                  onClick={() => handleSelectTopic(topic)}
+                  style={{
+                    padding: '10px 12px',
+                    color: 'var(--navy)',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    backgroundColor: 'rgba(0, 150, 136, 0.15)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    textAlign: 'left',
+                    pointerEvents: 'auto',
+                      transition: 'all 200ms ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--teal)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--navy)';
+                    }}
+                  >
+                    {topic.title}
+                  </button>
+                ))}
+            </div>
+          )}
+
+          {/* Slides list */}
+          {view === 'lesson' && currentSlides && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {currentSlides.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrentSlideIndex(idx)}
+                  style={{
+                    padding: '10px 12px',
+                    borderLeft:
+                      currentSlideIndex === idx ? '3px solid var(--teal)' : '3px solid transparent',
+                    paddingLeft: currentSlideIndex === idx ? '9px' : '12px',
+                    color: currentSlideIndex === idx ? 'var(--navy)' : 'var(--muted)',
+                    fontSize: '13px',
+                    fontWeight: currentSlideIndex === idx ? 500 : 400,
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    textAlign: 'left',
+                    pointerEvents: 'auto',
+                    transition: 'all 200ms ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentSlideIndex !== idx) {
+                      e.currentTarget.style.color = 'var(--navy)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (currentSlideIndex !== idx) {
+                      e.currentTarget.style.color = 'var(--muted)';
+                    }
+                  }}
+                >
+                  Slide {idx + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Study Mode Button */}
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            padding: '16px 20px',
+            marginTop: 'auto',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowPreferenceDelta(true)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              backgroundColor: 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--navy)',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 200ms ease',
+              pointerEvents: 'auto',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(0, 150, 136, 0.1)';
+              e.currentTarget.style.borderColor = 'var(--teal)';
+              e.currentTarget.style.color = 'var(--teal)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.color = 'var(--navy)';
+            }}
+          >
+            ◐ Study Mode
+          </button>
+          <div
+            style={{
+              fontSize: '12px',
+              color: 'var(--muted)',
+              marginTop: '8px',
+              textAlign: 'center',
+            }}
+          >
+            {selectedFormat}
           </div>
         </div>
       </aside>
@@ -164,113 +311,577 @@ export default function Home() {
         }}
       >
         {/* Progress Bar */}
+        {view === 'lesson' && (
+          <div
+            style={{
+              height: '4px',
+              backgroundColor: 'var(--border)',
+              position: 'sticky',
+              top: '56px',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${progress}%`,
+                backgroundColor: 'var(--teal)',
+                transition: 'width 300ms ease',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Content */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '48px 0' }}>
+          {view === 'subjects' && (
+            <div
+              style={{
+                maxWidth: '900px',
+                margin: '0 auto',
+                paddingLeft: '48px',
+                paddingRight: '48px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+              }}
+            >
+              <p
+                style={{
+                  fontSize: '18px',
+                  lineHeight: '1.8',
+                  color: 'var(--text)',
+                  marginBottom: '48px',
+                  maxWidth: '700px',
+                }}
+              >
+                <span style={{ fontSize: '24px', fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: '16px' }}>
+                  Hello & Welcome
+                </span>
+                NeuroAdapt is an adaptive learning platform designed to personalize your educational journey. 
+                Our intelligent system learns your learning style and pace, adjusting content in real-time to keep 
+                you engaged and maximizing your understanding. Start your lesson today by selecting a subject that interests you.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowModal(true)}
+                style={{
+                  padding: '14px 32px',
+                  border: 'none',
+                  backgroundColor: 'var(--teal)',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 200ms ease',
+                  pointerEvents: 'auto',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '0.9';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
+              >
+                Begin Lesson
+              </button>
+
+              {/* Key Features Section */}
+              <div
+                style={{
+                  marginTop: '96px',
+                  paddingTop: '64px',
+                  borderTop: '1px solid var(--border)',
+                  width: '100%',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '32px',
+                    maxWidth: '1000px',
+                    margin: '0 auto',
+                  }}
+                >
+                  {/* Feature 1 */}
+                  <div
+                    style={{
+                      padding: '32px 24px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(0, 150, 136, 0.05)',
+                      textAlign: 'center',
+                      transition: 'all 200ms ease',
+                      cursor: 'default',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 150, 136, 0.15)';
+                      e.currentTarget.style.borderColor = 'var(--teal)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                    }}
+                  >
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 40 40"
+                      fill="none"
+                      stroke="var(--teal)"
+                      strokeWidth="2"
+                      style={{ margin: '0 auto 16px', display: 'block' }}
+                    >
+                      <circle cx="20" cy="20" r="16" />
+                      <path d="M20 8v24M8 20h24" strokeLinecap="round" />
+                      <circle cx="20" cy="20" r="3" fill="var(--teal)" />
+                    </svg>
+                    <h3
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        color: 'var(--navy)',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      Adaptive Learning
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: '14px',
+                        color: 'var(--text)',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Content dynamically adjusts to your learning pace and style, keeping you engaged and challenged.
+                    </p>
+                  </div>
+
+                  {/* Feature 2 */}
+                  <div
+                    style={{
+                      padding: '32px 24px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(0, 150, 136, 0.05)',
+                      textAlign: 'center',
+                      transition: 'all 200ms ease',
+                      cursor: 'default',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 150, 136, 0.15)';
+                      e.currentTarget.style.borderColor = 'var(--teal)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                    }}
+                  >
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 40 40"
+                      fill="none"
+                      stroke="var(--teal)"
+                      strokeWidth="2"
+                      style={{ margin: '0 auto 16px', display: 'block' }}
+                    >
+                      <rect x="6" y="8" width="28" height="24" rx="2" />
+                      <circle cx="20" cy="20" r="6" />
+                      <path d="M14 20h-2M28 20h2M20 14v-2M20 28v2" strokeLinecap="round" />
+                    </svg>
+                    <h3
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        color: 'var(--navy)',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      Personalized Support
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: '14px',
+                        color: 'var(--text)',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Multiple teaching modalities and interventions tailored to your preferences and needs.
+                    </p>
+                  </div>
+
+                  {/* Feature 3 */}
+                  <div
+                    style={{
+                      padding: '32px 24px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(0, 150, 136, 0.05)',
+                      textAlign: 'center',
+                      transition: 'all 200ms ease',
+                      cursor: 'default',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 150, 136, 0.15)';
+                      e.currentTarget.style.borderColor = 'var(--teal)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                    }}
+                  >
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 40 40"
+                      fill="none"
+                      stroke="var(--teal)"
+                      strokeWidth="2"
+                      style={{ margin: '0 auto 16px', display: 'block' }}
+                    >
+                      <path d="M20 4c-6 0-10 5-10 10 0 8 10 18 10 18s10-10 10-18c0-5-4-10-10-10z" />
+                      <circle cx="20" cy="14" r="3" fill="var(--teal)" />
+                    </svg>
+                    <h3
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        color: 'var(--navy)',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      Built for Everyone
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: '14px',
+                        color: 'var(--text)',
+                        lineHeight: '1.6',
+                      }}
+                    >
+                      Designed to work for all learners with special attention to supporting neurodivergent students.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'topics' && selectedSubject && (
+            <div
+              style={{
+                maxWidth: '680px',
+                margin: '0 auto',
+                paddingLeft: '48px',
+                paddingRight: '48px',
+              }}
+            >
+              <h1
+                style={{
+                  fontFamily: "'DM Serif Display', serif",
+                  fontSize: '36px',
+                  fontWeight: 400,
+                  color: 'var(--navy)',
+                  marginBottom: '48px',
+                }}
+              >
+                {selectedSubject.subject}
+              </h1>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {selectedSubject.topics.map((topic) => (
+                  <div
+                    key={topic.topicId}
+                    style={{
+                      padding: '24px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      transition: 'all 200ms ease',
+                      backgroundColor: 'rgba(0, 150, 136, 0.12)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '16px',
+                          fontWeight: 600,
+                          color: 'var(--navy)',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        {topic.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: 'var(--muted)',
+                        }}
+                      >
+                        {topic.duration}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTopic(topic)}
+                      style={{
+                        padding: '8px 20px',
+                        border: 'none',
+                        backgroundColor: 'var(--teal)',
+                        color: 'white',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 200ms ease',
+                        pointerEvents: 'auto',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '0.9';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                    >
+                      Start Lesson
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {view === 'lesson' && currentSlide && (
+            <div
+              style={{
+                maxWidth: '680px',
+                margin: '0 auto',
+                paddingLeft: '48px',
+                paddingRight: '48px',
+              }}
+            >
+              <h1
+                style={{
+                  fontFamily: "'DM Serif Display', serif",
+                  fontSize: '32px',
+                  fontWeight: 400,
+                  color: 'var(--navy)',
+                  marginBottom: '24px',
+                }}
+              >
+                {currentSlide.heading}
+              </h1>
+
+              <p
+                style={{
+                  fontSize: '17px',
+                  lineHeight: '1.75',
+                  color: 'var(--text)',
+                  marginBottom: '48px',
+                }}
+              >
+                {currentSlide.body}
+              </p>
+
+              {/* Navigation Buttons */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '48px' }}>
+                {!isFirstSlide && (
+                  <button
+                    type="button"
+                    onClick={handlePrevious}
+                    style={{
+                      padding: '10px 20px',
+                      border: '1px solid var(--navy)',
+                      backgroundColor: 'transparent',
+                      color: 'var(--navy)',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      transition: 'all 200ms ease',
+                      pointerEvents: 'auto',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    ← Previous
+                  </button>
+                )}
+                {!isLastSlide && (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    style={{
+                      padding: '10px 20px',
+                      border: 'none',
+                      backgroundColor: 'var(--teal)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      transition: 'all 200ms ease',
+                      pointerEvents: 'auto',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1';
+                    }}
+                  >
+                    Next →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Modal */}
+      {showModal && (
         <div
           style={{
-            height: '4px',
-            backgroundColor: 'var(--border)',
-            position: 'sticky',
-            top: '56px',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            pointerEvents: 'auto',
           }}
+          onClick={() => setShowModal(false)}
         >
           <div
             style={{
-              height: '100%',
-              width: `${progress}%`,
-              backgroundColor: 'var(--teal)',
-              transition: 'width 300ms ease',
+              backgroundColor: 'var(--surface)',
+              borderRadius: '12px',
+              padding: '48px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              pointerEvents: 'auto',
+              marginLeft: '130px',
             }}
-          />
-        </div>
-
-        {/* Slide Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '48px 0' }}>
-          <div
-            style={{
-              maxWidth: '680px',
-              margin: '0 auto',
-              paddingLeft: '48px',
-              paddingRight: '48px',
-            }}
-            data-word-count={currentLesson.wordCount}
+            onClick={(e) => e.stopPropagation()}
           >
-            <h1
+            <h2
               style={{
                 fontFamily: "'DM Serif Display', serif",
                 fontSize: '36px',
                 fontWeight: 400,
                 color: 'var(--navy)',
+                marginBottom: '40px',
+                textAlign: 'center',
+              }}
+            >
+              Select a Subject
+            </h2>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
                 marginBottom: '32px',
               }}
             >
-              {currentLesson.title}
-            </h1>
-
-            {currentLesson.paragraphs.map((paragraph, idx) => (
-              <p key={idx} style={{ fontSize: '17px', lineHeight: '1.75', color: 'var(--text)', marginBottom: '24px' }}>
-                {paragraph}
-              </p>
-            ))}
-
-            {/* Navigation Buttons */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '48px' }}>
-              {!isFirstLesson && (
+              {LESSON_CATALOGUE.map((subject) => (
                 <button
+                  key={subject.subjectId}
                   type="button"
-                  onClick={handlePrevious}
+                  onClick={() => handleSelectSubject(subject.subjectId)}
                   style={{
-                    padding: '10px 20px',
-                    border: '1px solid var(--navy)',
+                    padding: '20px 24px',
+                    border: '2px solid var(--border)',
                     backgroundColor: 'transparent',
-                    color: 'var(--navy)',
-                    borderRadius: 'var(--radius)',
-                    fontSize: '14px',
-                    fontWeight: 500,
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'all 200ms ease',
+                    textAlign: 'left',
                     pointerEvents: 'auto',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
+                    e.currentTarget.style.backgroundColor = 'var(--border)';
+                    e.currentTarget.style.borderColor = 'var(--teal)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  ← Previous
+                  <div
+                    style={{
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: 'var(--navy)',
+                    }}
+                  >
+                    {subject.subject}
+                  </div>
                 </button>
-              )}
-              {!isLastLesson && (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  style={{
-                    padding: '10px 20px',
-                    border: 'none',
-                    backgroundColor: 'var(--teal)',
-                    color: 'white',
-                    borderRadius: 'var(--radius)',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    transition: 'all 200ms ease',
-                    pointerEvents: 'auto',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '0.9';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '1';
-                  }}
-                >
-                  Next →
-                </button>
-              )}
+              ))}
             </div>
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              style={{
+                padding: '12px 24px',
+                border: '1px solid var(--border)',
+                backgroundColor: 'transparent',
+                color: 'var(--navy)',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 200ms ease',
+                pointerEvents: 'auto',
+                width: '100%',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
-      </main>
+      )}
 
-      {/* EnergyBar Component */}
+      {/* PreferenceDelta Modal */}
+      <PreferenceDelta
+        open={showPreferenceDelta}
+        onSelect={(format) => setSelectedFormat(format)}
+        onClose={() => setShowPreferenceDelta(false)}
+      />
+
+      {/* EnergyBar */}
       <EnergyBar
         onBreakRequest={() => {
           console.log('Break requested');
@@ -280,7 +891,6 @@ export default function Home() {
         }}
         breakDuration={60}
       />
-
     </div>
   );
 }
