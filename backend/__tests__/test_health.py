@@ -1,8 +1,6 @@
-import fakeredis.aioredis
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import backend.routers.health as health_router
 from backend.main import create_app
 
 
@@ -28,28 +26,27 @@ async def test_favicon_endpoint_returns_no_content() -> None:
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint_reports_redis_connected(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr(health_router, "redis_client", fake_redis)
-
+async def test_health_endpoint_reports_optional_redis() -> None:
     app = create_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "redis": "connected"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["state_store"] == "memory"
+    assert body["redis_required"] == "false"
 
 
 @pytest.mark.asyncio
-async def test_health_api_alias_reports_redis_connected(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr(health_router, "redis_client", fake_redis)
-
+async def test_health_api_alias_reports_optional_redis() -> None:
     app = create_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "redis": "connected"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["redis_required"] == "false"

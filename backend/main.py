@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.db import ensure_schema
 from backend.routers.action import router as action_router
 from backend.routers.feedback import router as feedback_router
 from backend.routers.health import router as health_router
@@ -26,6 +27,15 @@ def create_app() -> FastAPI:
     app.include_router(state_router)
     app.include_router(action_router)
     app.include_router(feedback_router)
+
+    @app.on_event("startup")
+    async def _startup() -> None:
+        try:
+            await ensure_schema()
+        except Exception:
+            # Demo mode can still serve state/action from memory if Postgres is
+            # temporarily unavailable during local startup.
+            pass
 
     return app
 

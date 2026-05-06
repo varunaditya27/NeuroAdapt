@@ -6,3 +6,5 @@ class ActionResponse(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     gated: bool
     action_name: str
+    q_values: list[float] = Field(default_factory=list)
+    policy_source: str = "heuristic"
