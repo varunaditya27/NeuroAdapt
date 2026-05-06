@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from PIL import ImageStat
 
@@ -58,8 +59,12 @@ def _build_prompt(concept: str, slide_content: str, learner_level: str) -> str:
 
 
 def _write_svg_placeholder(file_path: Path, concept: str) -> None:
+    file_path.write_text(_svg_placeholder(concept), encoding="utf-8")
+
+
+def _svg_placeholder(concept: str) -> str:
     safe_text = html.escape((concept or "Concept Illustration")[:54])
-    svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='768' height='512' viewBox='0 0 768 512'>
+    return f"""<svg xmlns='http://www.w3.org/2000/svg' width='768' height='512' viewBox='0 0 768 512'>
   <rect width='100%' height='100%' fill='#F9F7F0'/>
   <rect x='84' y='96' width='600' height='320' rx='24' fill='#A8DADC' opacity='0.65'/>
   <circle cx='220' cy='220' r='52' fill='#F1E8D9'/>
@@ -71,7 +76,10 @@ def _write_svg_placeholder(file_path: Path, concept: str) -> None:
     calm fallback visual (autism-safe palette)
   </text>
 </svg>"""
-    file_path.write_text(svg, encoding="utf-8")
+
+
+def _svg_data_url(concept: str) -> str:
+    return f"data:image/svg+xml;charset=utf-8,{quote(_svg_placeholder(concept))}"
 
 
 def _verify_generated_image_safety(image: Any) -> tuple[bool, str, str]:
@@ -151,7 +159,8 @@ def generate_image(
         }
     if svg_path.exists():
         return {
-            "image_url": str(svg_path),
+            "image_url": _svg_data_url(concept),
+            "asset_path": str(svg_path),
             "format": "svg",
             "width": 768,
             "height": 512,
@@ -182,7 +191,8 @@ def generate_image(
             if not is_safe:
                 _write_svg_placeholder(svg_path, concept)
                 return {
-                    "image_url": str(svg_path),
+                    "image_url": _svg_data_url(concept),
+                    "asset_path": str(svg_path),
                     "format": "svg",
                     "width": 768,
                     "height": 512,
@@ -215,7 +225,8 @@ def generate_image(
         except Exception as exc:
             _write_svg_placeholder(svg_path, concept)
             return {
-                "image_url": str(svg_path),
+                "image_url": _svg_data_url(concept),
+                "asset_path": str(svg_path),
                 "format": "svg",
                 "width": 768,
                 "height": 512,
@@ -230,7 +241,8 @@ def generate_image(
 
     _write_svg_placeholder(svg_path, concept)
     return {
-        "image_url": str(svg_path),
+        "image_url": _svg_data_url(concept),
+        "asset_path": str(svg_path),
         "format": "svg",
         "width": 768,
         "height": 512,

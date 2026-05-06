@@ -1,6 +1,7 @@
 """Request schemas for Gen Engine API contracts."""
 
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -120,6 +121,14 @@ class GenerateRequest(BaseModel):
         description="Content to transform (text, concept description, etc.)",
     )
     learner_level: LearnerLevel = Field(..., description="Target reading/complexity level")
+    session_id: str | None = Field(default=None, min_length=1)
+    state_vector: dict[str, Any] | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    content_type: str | None = None
+    concept: str | None = None
+    learner_id: str | None = None
+    voice_profile: str | None = None
+    source_image: str | None = None
 
     @field_validator("action_id")
     @classmethod
