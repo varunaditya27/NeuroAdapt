@@ -384,17 +384,21 @@ async def health_check() -> HealthResponse:
     ollama_reachable = bool(app_state["services"].get("Ollama", {}).get("available", False))
     kokoro_reachable = bool(app_state["services"].get("Kokoro TTS", {}).get("available", False))
     llm_provider_info = app_state.get("llm_provider", {"name": "unknown", "healthy": False})
+    groq_reachable = (
+        llm_provider_info.get("name") == "groq" and bool(llm_provider_info.get("healthy"))
+    )
 
     disk = shutil.disk_usage("/")
     disk_space_gb = round(disk.free / (1024**3), 1)
     cache_size_mb = _directory_size_mb(Path(__file__).parent / "cache")
-    overall_status = "healthy" if (ollama_reachable and kokoro_reachable and llm_provider_info.get("healthy")) else "degraded"
+    overall_status = "healthy" if bool(llm_provider_info.get("healthy")) else "degraded"
 
     # Always return 200 OK as long as gen-engine app itself is running
     # External service failures don't make the app unhealthy
     return HealthResponse(
         status=overall_status,
         timestamp=datetime.now().isoformat(),
+        groq_reachable=groq_reachable,
         ollama_reachable=ollama_reachable,
         kokoro_reachable=kokoro_reachable,
         llm_provider=llm_provider_info,

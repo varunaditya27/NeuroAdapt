@@ -1,21 +1,27 @@
-import json
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import APIRouter, HTTPException
-
-from backend.db import redis_client
+from backend.db import get_db
 from backend.models.state_vector import StateVector
+from backend.services.state_store import persist_state, set_cached_state
 
 router = APIRouter(prefix="/api", tags=["state"])
 
 
 @router.post("/state")
-async def post_state(payload: StateVector) -> dict[str, str]:
-    key = f"state:{payload.session_id}"
+async def post_state(
+    payload: StateVector,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str | bool]:
     vector = payload.as_list()
+    set_cached_state(payload.session_id, vector)
 
+    persisted = False
     try:
-        await redis_client.set(key, json.dumps(vector), ex=300)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Redis unavailable: {exc}") from exc
+        await persist_state(db, payload.session_id, vector)
+        await db.commit()
+        persisted = True
+    except Exception:
+        await db.rollback()
 
-    return {"status": "ok", "session_id": payload.session_id}
+    return {"status": "ok", "session_id": payload.session_id, "persisted": persisted}

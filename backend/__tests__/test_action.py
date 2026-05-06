@@ -1,17 +1,16 @@
-import fakeredis.aioredis
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 import backend.routers.action as action_router
 from backend.main import create_app
+from backend.services.state_store import clear_state_cache, set_cached_state
 
 
 @pytest.mark.asyncio
 async def test_action_endpoint_applies_confidence_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    await fake_redis.set("state:session-low-confidence", "[0.2, 0.2, 0.2, 0.2, 0.2]", ex=300)
+    clear_state_cache()
+    set_cached_state("session-low-confidence", [0.2, 0.2, 0.2, 0.2, 0.2])
 
-    monkeypatch.setattr(action_router, "redis_client", fake_redis)
     monkeypatch.setattr(action_router, "_infer_q_values", lambda _: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     app = create_app()

@@ -371,18 +371,18 @@ prefetch_manager.set_generator(_prefetch_generator)
 def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     """Main request router called by API endpoint."""
     request_data = request.model_dump(mode="json")
-    session_id = str(uuid4())
-    state_vector: dict[str, Any] = {}
+    session_id = str(request_data.get("session_id") or uuid4())
+    state_vector = request_data.get("state_vector") or {}
 
     # Internal defaults for optional orchestration context.
     request_data["session_id"] = session_id
     request_data["state_vector"] = state_vector
-    request_data["confidence"] = 0.5
-    request_data["concept"] = None
-    request_data["content_type"] = None
-    request_data["learner_id"] = None
-    request_data["voice_profile"] = None
-    request_data["source_image"] = None
+    request_data["confidence"] = request_data.get("confidence") or 0.5
+    request_data["concept"] = request_data.get("concept")
+    request_data["content_type"] = request_data.get("content_type")
+    request_data["learner_id"] = request_data.get("learner_id")
+    request_data["voice_profile"] = request_data.get("voice_profile")
+    request_data["source_image"] = request_data.get("source_image")
 
     should_preempt, composite, _ = check_hyperfocus(
         session_id=session_id, state_vector=state_vector
