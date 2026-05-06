@@ -36,7 +36,14 @@ function clamp(value, min = 0, max = 1) {
  */
 function getSessionId() {
   if (!sessionId) {
-    sessionId = `session_${uuidv4()}`;
+    const storedSessionId =
+      typeof window !== 'undefined'
+        ? window.sessionStorage.getItem('neuroAdapt_sessionId')
+        : null;
+    sessionId = storedSessionId || `session_${uuidv4()}`;
+    if (typeof window !== 'undefined' && !storedSessionId) {
+      window.sessionStorage.setItem('neuroAdapt_sessionId', sessionId);
+    }
   }
   return sessionId;
 }

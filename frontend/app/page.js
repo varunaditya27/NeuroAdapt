@@ -3,7 +3,13 @@
 import { useState, useEffect, useRef } from 'react';
 import EnergyBar from '@/components/EnergyBar';
 import PreferenceDelta from '@/components/PreferenceDelta';
-import { init as initObserver, destroy as destroyObserver, setPreferenceDelta } from '@/components/Observer';
+import {
+  init as initObserver,
+  destroy as destroyObserver,
+  flush as flushObserver,
+  getLastStateVector,
+  setPreferenceDelta,
+} from '@/components/Observer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
 
@@ -15,6 +21,10 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('text');
+  const [adaptiveContent, setAdaptiveContent] = useState(null);
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState(null);
+  const [lastAction, setLastAction] = useState(null);
   const sessionIdRef = useRef(null);
 
   // Initialize Observer on mount
@@ -104,6 +114,7 @@ export default function Home() {
 
       // Update Observer with the calculated preference delta
       setPreferenceDelta(dynamicPreferenceDelta);
+      await postFeedback('format_choice', format);
 
       console.log('[Home] Format selected and preference delta updated:', {
         previousFormat: selectedFormat,
@@ -114,12 +125,165 @@ export default function Home() {
       console.error('[Home] Error updating preference delta:', error);
       // Fallback: use neutral preference delta on error
       setPreferenceDelta(0.5);
+      await postFeedback('format_choice', format);
     }
   };
 
   const progress = selectedTopic
     ? Math.round(((currentSlideIndex + 1) / currentSlides.length) * 100)
     : 0;
+
+  useEffect(() => {
+    if (view !== 'lesson' || !currentSlide || !sessionIdRef.current) {
+      setAdaptiveContent(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const runAdaptiveCycle = async () => {
+      setAdaptiveLoading(true);
+      setAdaptiveError(null);
+
+      try {
+        await flushObserver();
+
+        const actionResponse = await fetch(
+          `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}`,
+          { cache: 'no-store' }
+        );
+        if (!actionResponse.ok) {
+          throw new Error(`Action request failed (${actionResponse.status})`);
+        }
+
+        const action = await actionResponse.json();
+        if (cancelled) return;
+        setLastAction(action);
+
+        if (action.gated || action.action_id === 0) {
+          setAdaptiveContent(null);
+          return;
+        }
+
+        const generateResponse = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action_id: action.action_id,
+            slide_content: `${currentSlide.heading}\n\n${currentSlide.body}`,
+            learner_level: 'grade8',
+            session_id: sessionIdRef.current,
+            confidence: action.confidence,
+          }),
+        });
+
+        if (generateResponse.status === 204) {
+          setAdaptiveContent(null);
+          return;
+        }
+        if (!generateResponse.ok) {
+          throw new Error(`Generation request failed (${generateResponse.status})`);
+        }
+
+        const generated = await generateResponse.json();
+        if (!cancelled) {
+          setAdaptiveContent(generated);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAdaptiveError(error instanceof Error ? error.message : String(error));
+          setAdaptiveContent(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAdaptiveLoading(false);
+        }
+      }
+    };
+
+    runAdaptiveCycle();
+    const timer = setInterval(runAdaptiveCycle, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [view, currentSlideIndex, currentSlide]);
+
+  const postFeedback = async (event, chosenFormat = null) => {
+    if (!sessionIdRef.current) return;
+
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          event,
+          chosen_format: chosenFormat,
+          current_state: getLastStateVector() || [0.5, 0.5, 0.5, 0.5, 0.5],
+          action_taken: lastAction?.action_id ?? 0,
+        }),
+      });
+    } catch (error) {
+      console.warn('[Home] feedback post failed:', error);
+    }
+  };
+
+  const renderAdaptiveContent = () => {
+    if (!adaptiveContent?.content) return null;
+
+    const { action_id: actionId, content } = adaptiveContent;
+    if (actionId === 4 && Array.isArray(content.quiz_json)) {
+      return (
+        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px' }}>
+          <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '16px' }}>Quick Check</h2>
+          {content.quiz_json.map((question) => (
+            <div key={question.id} style={{ marginBottom: '18px' }}>
+              <p style={{ fontWeight: 600, marginBottom: '8px' }}>{question.text}</p>
+              <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                {question.options.map((option, index) => (
+                  <li key={option} style={{ marginBottom: '4px' }}>
+                    {option}{index === question.correct_index ? ' ✓' : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (actionId === 5) {
+      return (
+        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--teal)', borderRadius: '8px' }}>
+          <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '12px' }}>{content.title || 'Sensory Reset'}</h2>
+          <p style={{ lineHeight: 1.7 }}>{content.break_template}</p>
+        </div>
+      );
+    }
+
+    if (content.video_url || content.image_url || content.audio_url) {
+      return (
+        <div style={{ marginTop: '32px' }}>
+          {content.video_url && <video src={content.video_url} controls style={{ width: '100%', borderRadius: '8px' }} />}
+          {content.image_url && <img src={content.image_url} alt="Generated lesson visual" style={{ width: '100%', borderRadius: '8px' }} />}
+          {content.audio_url && <audio src={content.audio_url} controls style={{ width: '100%', marginTop: '12px' }} />}
+          {content.simplified_text && <p style={{ marginTop: '16px', lineHeight: 1.7 }}>{content.simplified_text}</p>}
+        </div>
+      );
+    }
+
+    if (content.simplified_text) {
+      return (
+        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px' }}>
+          <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '12px' }}>Adapted Version</h2>
+          <p style={{ lineHeight: 1.7 }}>{content.simplified_text}</p>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', paddingTop: '56px' }}>
@@ -750,6 +914,14 @@ export default function Home() {
                 {currentSlide.body}
               </p>
 
+              {adaptiveLoading && (
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Adapting this slide…</p>
+              )}
+              {adaptiveError && (
+                <p style={{ color: '#B91C1C', fontSize: '14px' }}>{adaptiveError}</p>
+              )}
+              {renderAdaptiveContent()}
+
               {/* Navigation Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '48px' }}>
                 {!isFirstSlide && (
@@ -941,6 +1113,7 @@ export default function Home() {
       <EnergyBar
         onBreakRequest={() => {
           console.log('Break requested');
+          postFeedback('energy_bar');
         }}
         onBreakEnd={() => {
           console.log('Break ended');
