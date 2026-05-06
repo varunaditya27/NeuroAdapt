@@ -38,10 +38,10 @@ from shared_config import (
 
 # Do not start training until this many experiences are in the buffer.
 # Training on fewer produces nearly identical batches and useless gradients.
-MIN_REPLAY_SIZE = 1_000
-REPLAY_PREFILL_SIZE = 1_000
+MIN_REPLAY_SIZE = 5000
+REPLAY_PREFILL_SIZE = 5000
 EVAL_SAMPLE_SIZE = 512
-GRAD_CLIP_NORM = 10.0
+GRAD_CLIP_NORM = 1.0
 DEFAULT_CLASSICAL_HIDDEN_DIM = 64
 
 DEFAULT_STEPS_PER_EPISODE = 50
@@ -214,9 +214,8 @@ def generate_next_state(state: list[float]) -> list[float]:
 
 
 def compute_reward(action: int, preferred_action: int) -> float:
-    """Exponentially decayed reward to penalize large misses harder."""
-    distance = abs(action - preferred_action)
-    return float(math.exp(-(distance**2) / 2.0))
+    """Binary Reward during pre-training: 1.0 if action == preferred_action else 0.0"""
+    return 1.0 if action == preferred_action else 0.0
 
 
 def _quantum_grad_norm(model) -> float:
@@ -256,7 +255,8 @@ def train_step(batch, online_net, target_net, optimiser, gamma: float = GAMMA) -
         q_target_val = target_net(next_states_t).gather(1, next_actions)
         td_target = rewards_t + gamma * q_target_val * (1.0 - dones_t)
 
-    loss = F.smooth_l1_loss(q_online, td_target)
+    loss = F.mse_loss(q_online, td_target)
+
     optimiser.zero_grad()
     loss.backward()
     quantum_grad_norm = _quantum_grad_norm(online_net)
@@ -281,14 +281,19 @@ def _build_optimiser(
     quantum_head_lr: Optional[float] = None,
 ):
     if model_type == "quantum":
-        q_lr = quantum_layer_lr if quantum_layer_lr is not None else learning_rate * 5.0
+        q_lr = quantum_layer_lr if quantum_layer_lr is not None else learning_rate * 1.0
         h_lr = quantum_head_lr if quantum_head_lr is not None else learning_rate
-        return optim.Adam([
-            {"params": model.quantum_layer.parameters(), "lr": q_lr},
+        
+        params = [
+            {"params": model.quantum_layer.parameters(), "lr": q_lr, "weight_decay": 0.01},
             {"params": model.bn.parameters(),            "lr": h_lr},
             {"params": model.advantage.parameters(),     "lr": h_lr},
             {"params": model.value.parameters(),         "lr": h_lr},
-        ])
+        ]
+        if hasattr(model, 'bottleneck'):
+            params.append({"params": model.bottleneck.parameters(), "lr": h_lr})
+            
+        return optim.Adam(params)
     return optim.Adam(model.parameters(), lr=learning_rate)
 
 def run_training(
@@ -332,7 +337,7 @@ def run_training(
         quantum_layer_lr=quantum_layer_lr,
         quantum_head_lr=quantum_head_lr,
     )
-    scheduler = optim.lr_scheduler.StepLR(optimiser, step_size=300, gamma=0.5)
+    scheduler = optim.lr_scheduler.StepLR(optimiser, step_size=500, gamma=1.0)
     replay = ReplayBuffer(capacity=REPLAY_CAPACITY)
 
     prefill_size = min(len(dataset_transitions), max(MIN_REPLAY_SIZE, REPLAY_PREFILL_SIZE))
@@ -447,6 +452,7 @@ def run_training(
             torch.save(online_net.state_dict(), checkpoint_path)
 
         scheduler.step()
+        print(f"Episode {episode}/{episodes} - Reward: {episode_reward:.2f}, Loss: {mean_loss:.4f}, Pref Delta: {mean_pref_delta_eval:.4f}")
 
     if write_latest:
         latest_path = checkpoints_dir / "latest.pt"
@@ -482,7 +488,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train NeuroAdapt DDQN policy")
     parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--steps-per-episode", type=int, default=DEFAULT_STEPS_PER_EPISODE)
-    parser.add_argument("--learning-rate", type=float, default=5e-4)
+    parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--checkpoint-every", type=int, default=50)
     parser.add_argument("--model", choices=["quantum", "classical"], default="quantum")
     parser.add_argument("--checkpoint-prefix", type=str, default="policy")
@@ -490,8 +496,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=str, default=DEFAULT_DATA_DIR)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=EPSILON_DECAY_EP)
     parser.add_argument("--classical-hidden-dim", type=int, default=DEFAULT_CLASSICAL_HIDDEN_DIM)
-    parser.add_argument("--quantum-layer-lr", type=float, default=None)
-    parser.add_argument("--quantum-head-lr", type=float, default=None)
+    parser.add_argument("--quantum-layer-lr", type=float, default=1e-3)
+    parser.add_argument("--quantum-head-lr", type=float, default=1e-4)
     parser.add_argument("--reward-mode", choices=["dataset", "exp-distance"], default="exp-distance")
     parser.add_argument("--actions", type=int, default=N_ACTIONS, help="Number of actions (output head size). Default matches shared_config.")
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")

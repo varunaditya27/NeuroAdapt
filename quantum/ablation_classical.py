@@ -121,6 +121,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quantum-head-lr", type=float, default=1e-4)
     parser.add_argument("--classical-hidden-dim", type=int, default=64)
     parser.add_argument("--reward-mode", choices=["dataset", "exp-distance"], default="exp-distance")
+    parser.add_argument("--data-dir", type=str, default="quantum/data")
     return parser.parse_args()
 
 
@@ -150,6 +151,7 @@ def main() -> None:
             quantum_layer_lr=args.quantum_layer_lr,
             quantum_head_lr=args.quantum_head_lr,
             reward_mode=args.reward_mode,
+            data_dir=args.data_dir,
         )
 
         classical_result = run_training(
@@ -166,6 +168,7 @@ def main() -> None:
             epsilon_decay_episodes=args.epsilon_decay_episodes,
             classical_hidden_dim=args.classical_hidden_dim,
             reward_mode=args.reward_mode,
+            data_dir=args.data_dir,
         )
 
         quantum_histories.append(quantum_result.preference_delta_history)

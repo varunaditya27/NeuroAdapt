@@ -45,61 +45,47 @@ if qml is not None:
     def vqc(inputs, weights, input_scales):
         encoded_inputs = qml.math.reshape(inputs, (-1, N_QUBITS))
         
-        # We use 5 layers now to give the VQC enough "depth" to match classical performance
-        # Each layer needs 2 * N_QUBITS parameters (one for RY, one for RZ)
-        NUM_LAYERS = 5 
+        # Increase depth for research-grade complexity
+        NUM_LAYERS = 5
         params_per_layer = 2 * N_QUBITS
-
+ 
         for L in range(NUM_LAYERS):
-            # --- Data Re-uploading ---
-            # Re-upload only in early layers to limit excessive periodic collapse.
             if L < DATA_REUPLOAD_LAYERS:
                 for i in range(N_QUBITS):
-                    qml.RX(encoded_inputs[:, i] * PI * input_scales[L, i], wires=i)
-
-            # --- Entanglement Layer ---
-            # Alternating entanglement patterns helps avoid barren plateaus
-            if L % 2 == 0:
-                for i in range(N_QUBITS - 1):
-                    qml.CNOT(wires=[i, i + 1])
-            else:
-                qml.CNOT(wires=[N_QUBITS - 1, 0]) # Circular connection
-                for i in range(N_QUBITS - 1, 0, -1):
-                    qml.CNOT(wires=[i, i - 1])
-
-            # --- Variational Layer (RY and RZ) ---
-            # Adding RZ allows the model to explore the full Bloch Sphere
-            layer_offset = L * params_per_layer
-            for i in range(N_QUBITS):
-                qml.RY(weights[layer_offset + i], wires=i)
-                qml.RZ(weights[layer_offset + N_QUBITS + i], wires=i)
-
-        # Final global entanglement to ensure all features are correlated
-        for i in range(N_QUBITS):
-            qml.CNOT(wires=[i, (i + 1) % N_QUBITS])
-
-        return [qml.expval(qml.PauliZ(i) if i % 2 == 0 else qml.PauliX(i)) for i in range(N_QUBITS)]
+                    # RY encoding is more stable for real-plane tabular input
+                    qml.RY(encoded_inputs[:, i] * PI * input_scales[L, i], wires=i)
+            
+            qml.StronglyEntanglingLayers(weights[L:L+1], wires=range(N_QUBITS))
+ 
+        # Standardized measurements + Entangling terms (7 outputs)
+        return [qml.expval(qml.PauliZ(i)) for i in range(N_QUBITS)]
 
     class QuantumDDQN(nn.Module):
         def __init__(self, n_actions: int = N_ACTIONS) -> None:
             super().__init__()
-            # 5 layers * (N_QUBITS * 2) parameters
+            # 5 layers for deeper feature extraction
             self.num_layers = 5
             self.data_reupload_layers = DATA_REUPLOAD_LAYERS
+            # Weights for StronglyEntanglingLayers are (layers, wires, 3)
             weight_shapes = {
-                "weights": (self.num_layers * N_QUBITS * 2,),
+                "weights": (self.num_layers, N_QUBITS, 3),
                 "input_scales": (self.data_reupload_layers, N_QUBITS),
             }
             
             self.quantum_layer = qml.qnn.TorchLayer(vqc, weight_shapes)
+            self.output_scale = nn.Parameter(torch.ones(1))
 
-            # LayerNorm is stable for both batch and single-sample inference.
-            self.norm = nn.LayerNorm(N_QUBITS)
-            # Backward-compatible alias used by existing optimizer code.
+            # Output from VQC is 5 measurements
+            self.norm = nn.LayerNorm(5)
             self.bn = self.norm
             
-            self.advantage = nn.Linear(N_QUBITS, n_actions)
-            self.value = nn.Linear(N_QUBITS, 1)
+            self.bottleneck = nn.Sequential(
+                nn.Linear(5, 16),
+                nn.ReLU()
+            )
+            
+            self.advantage = nn.Linear(16, n_actions)
+            self.value = nn.Linear(16, 1)
 
             with torch.no_grad():
                 for name, param in self.quantum_layer.named_parameters():
@@ -107,7 +93,10 @@ if qml is not None:
                         nn.init.uniform_(param, a=0.1, b=0.5)
                     else:
                         # Start broad so the circuit is not trapped in near-identity behavior.
-                        nn.init.uniform_(param, a=-math.pi, b=math.pi)
+                        nn.init.normal_(param, mean=0.0, std=0.01)
+
+                nn.init.xavier_uniform_(self.bottleneck[0].weight)
+                nn.init.constant_(self.bottleneck[0].bias, 0.1)
 
                 nn.init.xavier_uniform_(self.advantage.weight)
                 nn.init.zeros_(self.advantage.bias)
@@ -115,11 +104,15 @@ if qml is not None:
                 nn.init.zeros_(self.value.bias)
 
         def forward(self, state: torch.Tensor) -> torch.Tensor:
+            state = (state - 0.5) * 2.0
             q_out = self.quantum_layer(state)
+            q_out = q_out * self.output_scale
             q_out = self.norm(q_out)
+            
+            bottleneck_out = self.bottleneck(q_out)
                 
-            adv = self.advantage(q_out)
-            val = self.value(q_out)
+            adv = self.advantage(bottleneck_out)
+            val = self.value(bottleneck_out)
             return val + adv - adv.mean(dim=1, keepdim=True)
 
 else:
@@ -142,6 +135,7 @@ class ClassicalDDQN(nn.Module):
         self.value = nn.Linear(hidden_dim, 1)
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
+        state = (state - 0.5) * 2.0
         hidden = torch.tanh(self.feature(state))
         adv = self.advantage(hidden)
         val = self.value(hidden)

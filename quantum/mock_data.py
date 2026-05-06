@@ -93,10 +93,10 @@ REWARD_WEIGHTS: dict[str, float] = {
     "complete":        1.0,
     "answer_correct":  0.5,
     "format_choice":   0.2,
-    "energy_bar":     -2.0,
-    "stability_bonus": 0.3,
-    "tab_switch":     -0.3,
-    "overload":       -0.5,
+    "energy_bar":     -5.0,
+    "stability_bonus": 0.7,
+    "tab_switch":     -1.0,
+    "overload":       -2.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
             (0.78, 0.08),  # dwell      — high: locked in, time-blind [ADD.org]
             (0.18, 0.10),  # jitter     — low in focus state [Leontyev 2019]
             (0.82, 0.08),  # focus      — rarely tabs away during hyperfocus
-            (0.12, 0.08),  # stall      — near-zero idle [Kumar IUI 2026]
+            (0.02, 0.08),  # stall      — near-zero idle [Kumar IUI 2026]
             (0.42, 0.12),  # pref_delta — moderate; format curiosity shifts
         ],
         lapse_profile=[
@@ -159,7 +159,7 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
         lapse_duration_steps=2,   # lapse lasts ~2 steps (1 minute)
         done_prob=0.85 / 20,      # high lesson completion when not lapsing
         quiz_correct_p=0.72,      # good comprehension when focused
-        momentum=0.55,            # moderate: some volatility between states
+        momentum=0.25,            # moderate: some volatility between states
     ),
 
     # ------------------------------------------------------------------
@@ -177,7 +177,7 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
             (0.65, 0.15),  # dwell  — moderate-high with wide spread; re-reads cause oscillation [PMC5147795]
             (0.28, 0.10),  # jitter — unchanged
             (0.50, 0.12),  # focus  — slightly lower; regressive saccades = periodic focus drops [PMC5147795]
-            (0.63, 0.10),  # stall  — PRIMARY dyslexia signal; fixation duration 30-50% longer [Frontiers 2026]
+            (0.85, 0.10),  # stall  — PRIMARY dyslexia signal; fixation duration 30-50% longer [Frontiers 2026]
             (0.28, 0.08),  # pref_delta — unchanged
         ],
         lapse_profile=[
@@ -191,7 +191,7 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
         lapse_duration_steps=2,
         done_prob=0.70 / 20,      # lower completion rate per step
         quiz_correct_p=0.55,      # comprehension reduced by decoding load
-        momentum=0.45,            # high: gradual drift, less volatile than ADHD
+        momentum=0.25,            # high: gradual drift, less volatile than ADHD
     ),
 
     # ------------------------------------------------------------------
@@ -221,7 +221,7 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
         lapse_duration_steps=3,
         done_prob=0.90 / 20,
         quiz_correct_p=0.82,
-        momentum=0.55,
+        momentum=0.25,
     ),
 }
 
@@ -239,7 +239,7 @@ def _sample_from_profile(
     rng: random.Random,
 ) -> list[float]:
     """Sample a state vector from Gaussian profile, clipped to [0, 1]."""
-    return [_clip(rng.gauss(mu, sigma)) for mu, sigma in profile]
+    return [_clip(rng.gauss(mu, sigma + 0.05)) for mu, sigma in profile]
 
 
 def _evolve_state(
@@ -260,7 +260,7 @@ def _evolve_state(
     """
     fresh = _sample_from_profile(target_profile, rng)
     return [
-        _clip(momentum * c + (1.0 - momentum) * f + rng.uniform(-0.02, 0.02))
+        _clip(momentum * c + (1.0 - momentum) * f + rng.uniform(-0.04, 0.04))
         for c, f in zip(current, fresh)
     ]
 
@@ -305,6 +305,8 @@ def compute_signal_reward(
     # Lesson complete
     if done:
         reward += REWARD_WEIGHTS["complete"]
+    else:
+        reward -= 0.05
 
     # Overload: high stall AND high jitter simultaneously
     # Corresponds to ADHD paralysis state (Neuroperforma, 2026)
@@ -367,7 +369,10 @@ def generate_episode(
 
         next_state = _evolve_state(state, active_profile, rng, cfg.momentum)
 
-        action = heuristic_action(state)
+        if rng.random() < 0.15:
+            action = rng.randint(0, N_ACTIONS - 1)
+        else:
+            action = heuristic_action(state)
 
         is_last = (step == steps - 1)
         done = is_last or (rng.random() < cfg.done_prob)
@@ -452,7 +457,7 @@ def generate_dataset(
             "transitions":   flat,
         }
 
-        out_path = out_dir / f"{key}.json"
+        out_path = out_dir / f"{key}_2.json"
         out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         output_paths[key] = out_path
 
