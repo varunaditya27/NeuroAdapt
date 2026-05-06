@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🏗️ infra
-### Docker Compose · Postgres · Redis · Prometheus · Multi-service orchestration
+### Docker Compose · Postgres · Prometheus · Multi-service orchestration
 
 *The scaffolding that holds everything together — from your laptop to the cloud.*
 
@@ -22,7 +22,7 @@
 
 The `infra/` module owns everything required to **run, monitor, and deploy** NeuroAdapt as a complete system:
 
-- **Docker Compose** orchestration for the backend, frontend, gen-engine, PostgreSQL, Redis, and optional quantum jobs
+- **Docker Compose** orchestration for the backend, frontend, gen-engine, PostgreSQL, and optional quantum jobs
 - **Prometheus** scraping for backend/gen-engine metrics
 - **Volume-backed Postgres** bootstrap SQL for service schemas
 - **Environment examples** for consistent local/bootstrap setup
@@ -85,7 +85,7 @@ docker compose -f infra/docker-compose.yml up --build -d
 
 Full stack with:
 - Persistent PostgreSQL volume
-- Redis for backend caching
+- In-process backend state cache with Postgres replay persistence
 - Gen-engine + Kokoro TTS for generation flows
 - Optional quantum retraining job via `--profile quantum`
 
