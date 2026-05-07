@@ -19,6 +19,10 @@ let mouseSamples = []; // Array of {timestamp, x, y}
 let visibilityHiddenCount = 0;
 let preferenceDelta = 1.0; // Initialize to 1.0: users staying in default text mode are rewarded
 
+// Lesson tracking state (for event-based completion flushing)
+let lessonStartTime = null;
+let lessonMetadata = null; // {subject, topic, total_slides, current_slide}
+
 // Constants
 const AVERAGE_READING_TIME_MS = 250; // ms per word
 const MAX_VELOCITY_CAP = 3; // px/ms
@@ -309,6 +313,98 @@ function setPreferenceDelta(value) {
 }
 
 /**
+ * Start tracking a lesson
+ * Called when user enters lesson view
+ */
+function startLesson(metadata) {
+  lessonStartTime = Date.now();
+  lessonMetadata = {
+    subject: metadata?.subject || 'unknown',
+    topic: metadata?.topic || 'unknown',
+    total_slides: metadata?.total_slides || 0,
+    current_slide: metadata?.current_slide || 0,
+  };
+
+  console.log('[Observer] Lesson started:', {
+    metadata: lessonMetadata,
+    startTime: new Date(lessonStartTime).toLocaleTimeString(),
+  });
+}
+
+/**
+ * End lesson and flush completion telemetry immediately
+ * Called when user clicks "End Lesson" or navigates away from lesson view
+ * Returns the duration in milliseconds
+ */
+async function endLesson(metadata = null) {
+  if (!lessonStartTime) {
+    console.warn('[Observer] endLesson called but no lesson was started');
+    return 0;
+  }
+
+  const duration = Date.now() - lessonStartTime;
+  const stateVector = computeStateVector();
+  const [dwell, jitter, focus, stall, pref_delta] = stateVector;
+
+  // Update metadata if provided (e.g., final slide count)
+  if (metadata) {
+    lessonMetadata = { ...lessonMetadata, ...metadata };
+  }
+
+  console.log('[Observer] Lesson ending with immediate flush:', {
+    durationMs: duration,
+    lessonMetadata,
+    stateVector: { dwell, jitter, focus, stall, pref_delta },
+    timestamp: new Date().toLocaleTimeString(),
+  });
+
+  try {
+    const payload = {
+      session_id: getSessionId(),
+      timestamp: new Date().toISOString(),
+      state_vector: stateVector,
+      event_type: 'lesson_completion',
+      lesson_metadata: lessonMetadata,
+      duration_ms: duration,
+    };
+
+    const response = await fetch('/api/state', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.warn(`[Observer] POST /api/state (lesson completion) returned status ${response.status}`);
+    } else {
+      console.log('[Observer] Lesson completion telemetry sent successfully');
+    }
+
+    // Store for dashboard
+    lastStateVector = stateVector;
+    resetWindowCounters();
+  } catch (error) {
+    console.error('[Observer] Failed to send lesson completion telemetry:', error);
+  } finally {
+    lessonStartTime = null;
+    lessonMetadata = null;
+  }
+
+  return duration;
+}
+
+/**
+ * Update current lesson metadata (e.g., when slide changes)
+ */
+function updateLessonMetadata(updates) {
+  if (lessonMetadata) {
+    lessonMetadata = { ...lessonMetadata, ...updates };
+  }
+}
+
+/**
  * Cleanup: stop the flush interval and remove event listeners
  */
 function destroy() {
@@ -327,4 +423,4 @@ function destroy() {
 }
 
 // Named exports
-export { init, flush, setPreferenceDelta, destroy, getLastStateVector };
+export { init, flush, setPreferenceDelta, destroy, getLastStateVector, startLesson, endLesson, updateLessonMetadata };

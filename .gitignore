@@ -4,6 +4,8 @@ __pycache__/
 
 # Virtual environment
 .venv/
+backend/venv/
+gen-engine/venv2/
 
 # Local environment files
 .env

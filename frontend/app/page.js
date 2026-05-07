@@ -9,6 +9,9 @@ import {
   flush as flushObserver,
   getLastStateVector,
   setPreferenceDelta,
+  startLesson,
+  endLesson,
+  updateLessonMetadata,
 } from '@/components/Observer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
@@ -25,7 +28,9 @@ export default function Home() {
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
   const [adaptiveError, setAdaptiveError] = useState(null);
   const [lastAction, setLastAction] = useState(null);
+  const [lessonDuration, setLessonDuration] = useState(0);
   const sessionIdRef = useRef(null);
+  const lessonStartTimeRef = useRef(null);
 
   // Initialize Observer on mount
   useEffect(() => {
@@ -49,6 +54,29 @@ export default function Home() {
     };
   }, []);
 
+  // Track lesson start/end for telemetry
+  useEffect(() => {
+    if (view === 'lesson' && selectedTopic) {
+      // Starting a lesson
+      startLesson({
+        subject: selectedSubjectId,
+        topic: selectedTopic.topicId,
+        total_slides: currentSlides.length,
+        current_slide: currentSlideIndex,
+      });
+      lessonStartTimeRef.current = Date.now();
+      console.log('[Home] Lesson started:', { subject: selectedSubjectId, topic: selectedTopic.topicId });
+    } else if (view !== 'lesson' && lessonStartTimeRef.current) {
+      // Exiting a lesson - trigger completion telemetry
+      endLesson({
+        current_slide: currentSlideIndex,
+        total_slides: currentSlides.length,
+      });
+      lessonStartTimeRef.current = null;
+      console.log('[Home] Lesson ended via navigation');
+    }
+  }, [view, selectedTopic, selectedSubjectId]);
+
   const selectedSubject = selectedSubjectId
     ? LESSON_CATALOGUE.find((s) => s.subjectId === selectedSubjectId)
     : null;
@@ -58,6 +86,16 @@ export default function Home() {
 
   const isFirstSlide = currentSlideIndex === 0;
   const isLastSlide = currentSlideIndex === currentSlides.length - 1;
+
+  // Update lesson metadata when slide changes
+  useEffect(() => {
+    if (view === 'lesson') {
+      updateLessonMetadata({
+        current_slide: currentSlideIndex,
+        total_slides: currentSlides.length,
+      });
+    }
+  }, [currentSlideIndex, view, currentSlides.length]);
 
   const handleSelectSubject = (subjectId) => {
     setSelectedSubjectId(subjectId);
@@ -82,6 +120,24 @@ export default function Home() {
     setView('topics');
     setSelectedTopic(null);
     setCurrentSlideIndex(0);
+  };
+
+  const handleEndLesson = async () => {
+    // Explicitly end the lesson and send telemetry
+    const duration = await endLesson({
+      current_slide: currentSlideIndex,
+      total_slides: currentSlides.length,
+      explicitly_ended: true,
+    });
+    setLessonDuration(duration);
+    lessonStartTimeRef.current = null;
+    
+    // Navigate back to topics
+    setView('topics');
+    setSelectedTopic(null);
+    setCurrentSlideIndex(0);
+    
+    console.log('[Home] Lesson explicitly ended:', { durationMs: duration });
   };
 
   const handlePrevious = () => {
@@ -923,59 +979,85 @@ export default function Home() {
               {renderAdaptiveContent()}
 
               {/* Navigation Buttons */}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '48px' }}>
-                {!isFirstSlide && (
-                  <button
-                    type="button"
-                    onClick={handlePrevious}
-                    style={{
-                      padding: '10px 20px',
-                      border: '1px solid var(--navy)',
-                      backgroundColor: 'transparent',
-                      color: 'var(--navy)',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      transition: 'all 200ms ease',
-                      pointerEvents: 'auto',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    ← Previous
-                  </button>
-                )}
-                {!isLastSlide && (
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    style={{
-                      padding: '10px 20px',
-                      border: 'none',
-                      backgroundColor: 'var(--teal)',
-                      color: 'white',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      transition: 'all 200ms ease',
-                      pointerEvents: 'auto',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = '0.9';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = '1';
-                    }}
-                  >
-                    Next →
-                  </button>
-                )}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center', marginTop: '48px' }}>
+                <button
+                  type="button"
+                  onClick={handleEndLesson}
+                  style={{
+                    padding: '10px 16px',
+                    border: '1px solid #D97706',
+                    backgroundColor: 'transparent',
+                    color: '#D97706',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 200ms ease',
+                    pointerEvents: 'auto',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  ⏹ End Lesson
+                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {!isFirstSlide && (
+                    <button
+                      type="button"
+                      onClick={handlePrevious}
+                      style={{
+                        padding: '10px 20px',
+                        border: '1px solid var(--navy)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--navy)',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 200ms ease',
+                        pointerEvents: 'auto',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(27, 42, 74, 0.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      ← Previous
+                    </button>
+                  )}
+                  {!isLastSlide && (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      style={{
+                        padding: '10px 20px',
+                        border: 'none',
+                        backgroundColor: 'var(--teal)',
+                        color: 'white',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 200ms ease',
+                        pointerEvents: 'auto',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '0.9';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                    >
+                      Next →
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
