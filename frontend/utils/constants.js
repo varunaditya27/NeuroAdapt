@@ -46,6 +46,38 @@ export const FORMAT_METADATA = {
 };
 
 /**
+ * Study mode metadata for adaptive mode selection
+ * Maps study modes to their UI representation and descriptions
+ */
+export const STUDY_MODES = {
+  text: {
+    label: 'Text Mode',
+    description: 'Read at your own pace with bite-sized text content',
+    icon: '📖',
+  },
+  video: {
+    label: 'Video Mode',
+    description: 'Learn through visual explanations and demonstrations',
+    icon: '📹',
+  },
+  audio: {
+    label: 'Audio Mode',
+    description: 'Listen to narrated explanations (with sensory breaks)',
+    icon: '🎧',
+  },
+  quiz: {
+    label: 'Quiz Mode',
+    description: 'Test your knowledge with interactive questions',
+    icon: '✓',
+  },
+  sensory_break: {
+    label: 'Sensory Break',
+    description: 'Take a moment to reset with a guided break',
+    icon: '🌬️',
+  },
+};
+
+/**
  * Quiz result messages
  */
 export const QUIZ_RESULT_MESSAGES = {

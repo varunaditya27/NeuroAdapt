@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import EnergyBar from '@/components/EnergyBar';
 import PreferenceDelta from '@/components/PreferenceDelta';
+import StudyModeConfirmation from '@/components/StudyModeConfirmation';
 import {
   init as initObserver,
   destroy as destroyObserver,
@@ -15,6 +16,13 @@ import {
 } from '@/components/Observer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
+import {
+  actionIdToStudyMode,
+  computeStudyModePrefDelta,
+  fetchModelStudyModeRecommendation,
+  handleStudyModeUserChoice,
+  shouldShowRecommendation,
+} from '@/utils/studyModeUtils';
 
 export default function Home() {
   const [view, setView] = useState('subjects'); // subjects | topics | lesson
@@ -23,7 +31,10 @@ export default function Home() {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
+  const [showStudyModeRecommendation, setShowStudyModeRecommendation] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('text');
+  const [currentStudyMode, setCurrentStudyMode] = useState('text'); // Active study mode
+  const [modelSuggestedMode, setModelSuggestedMode] = useState(null); // Latest model suggestion
   const [adaptiveContent, setAdaptiveContent] = useState(null);
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
   const [adaptiveError, setAdaptiveError] = useState(null);
@@ -57,7 +68,11 @@ export default function Home() {
   // Track lesson start/end for telemetry
   useEffect(() => {
     if (view === 'lesson' && selectedTopic) {
-      // Starting a lesson
+      // Starting a lesson - reset study mode state for fresh recommendation
+      setCurrentStudyMode('text'); // Reset to default
+      setModelSuggestedMode(null);
+      setShowStudyModeRecommendation(false);
+      
       startLesson({
         subject: selectedSubjectId,
         topic: selectedTopic.topicId,
@@ -132,10 +147,11 @@ export default function Home() {
     setLessonDuration(duration);
     lessonStartTimeRef.current = null;
     
-    // Navigate back to topics
-    setView('topics');
-    setSelectedTopic(null);
-    setCurrentSlideIndex(0);
+    // Fetch and show study mode recommendation if applicable
+    await fetchAndShowRecommendation();
+    
+    // Note: Navigation back to topics happens only after user confirms/dismisses recommendation
+    // (or after modal closes if no recommendation)
     
     console.log('[Home] Lesson explicitly ended:', { durationMs: duration });
   };
@@ -183,6 +199,121 @@ export default function Home() {
       setPreferenceDelta(0.5);
       await postFeedback('format_choice', format);
     }
+  };
+
+  /**
+   * Handle study mode recommendation acceptance/rejection
+   * User choices:
+   * - 'accept': Switch to suggested mode, prefDelta = 1 (user aligned with model)
+   * - 'reject': Keep current mode, prefDelta = 0 (user misaligned with model)
+   * - 'alternative': Switch to chosen mode, prefDelta = 0 (user chose different from suggestion)
+   *
+   * Flow:
+   * 1. setCurrentStudyMode updates the active mode
+   * 2. setPreferenceDelta updates the Observer's prefDelta value
+   * 3. This prefDelta is included in the next state_vector flush to /api/state
+   * 4. postFeedback sends event to /api/feedback for immediate feedback tracking
+   */
+  const handleStudyModeChoice = async (choiceType, selectedMode = null) => {
+    try {
+      // Determine new mode and compute prefDelta based on user choice
+      const { newMode, prefDelta, reason } = handleStudyModeUserChoice(
+        choiceType,
+        currentStudyMode,
+        modelSuggestedMode,
+        selectedMode
+      );
+
+      // Update study mode in component state
+      setCurrentStudyMode(newMode);
+
+      // Update Observer's prefDelta - this will be included in next state vector sent to backend
+      // The Observer module automatically includes this in /api/state POST requests
+      setPreferenceDelta(prefDelta);
+
+      console.log('[Home] 🎯 Study mode changed:', {
+        previousMode: currentStudyMode,
+        newMode,
+        suggestedMode: modelSuggestedMode,
+        choiceType,
+        reason,
+        prefDelta,
+        timestamp: new Date().toISOString(),
+      });
+
+      // IMPORTANT: Flush observer to compute new state vector with updated prefDelta
+      // This ensures the feedback POST includes the correct prefDelta value
+      await flushObserver();
+
+      // Send immediate feedback event for tracking this specific choice
+      // Backend receives current_state (which now has updated prefDelta after flush above)
+      await postFeedback('study_mode_choice', null);
+      
+      // Store the sent prefDelta for dashboard display
+      localStorage.setItem('lastSentPrefDelta', JSON.stringify({
+        value: prefDelta,
+        timestamp: new Date().toISOString(),
+        choice: choiceType,
+      }));
+      
+      console.log('[Home] ✓ Feedback sent with prefDelta:', prefDelta);
+    } catch (error) {
+      console.error('[Home] Error handling study mode choice:', error);
+      setPreferenceDelta(0.5); // Fallback to neutral
+    }
+  };
+
+  /**
+   * Fetch model recommendation and show confirmation modal if it differs from current mode
+   * Called at lesson completion or on-demand from sidebar
+   */
+  const fetchAndShowRecommendation = async () => {
+    try {
+      console.log('[Home] Fetching study mode recommendation for session:', sessionIdRef.current);
+
+      // Fetch model's recommended study mode
+      const recommendedMode = await fetchModelStudyModeRecommendation(sessionIdRef.current);
+
+      console.log('[Home] Recommendation result:', {
+        suggestedMode: recommendedMode,
+        currentMode: currentStudyMode,
+        willShow: shouldShowRecommendation(currentStudyMode, recommendedMode),
+      });
+
+      // Update state with model suggestion
+      setModelSuggestedMode(recommendedMode);
+
+      // Show modal only if suggestion differs from current mode
+      if (shouldShowRecommendation(currentStudyMode, recommendedMode)) {
+        console.log('[Home] ✓ Showing study mode recommendation modal');
+        setShowStudyModeRecommendation(true);
+      } else {
+        console.log('[Home] ✗ No different recommendation or no suggestion - not showing modal');
+        // Auto-close and navigate back if no modal shown
+        handleStudyModeModalClose();
+      }
+    } catch (error) {
+      console.error('[Home] Error fetching recommendation:', error);
+      setModelSuggestedMode(null);
+      // Navigate back on error
+      handleStudyModeModalClose();
+    }
+  };
+
+  /**
+   * Handle study mode confirmation modal close
+   * Cleans up state and navigates back to topics after lesson completion
+   */
+  const handleStudyModeModalClose = () => {
+    setShowStudyModeRecommendation(false);
+    setModelSuggestedMode(null);
+    
+    // Navigate back to topics after modal closes
+    setView('topics');
+    setSelectedTopic(null);
+    setCurrentSlideIndex(0);
+    
+    console.log('[Home] Study mode confirmation closed, navigating back to topics');
   };
 
   const progress = selectedTopic
@@ -269,17 +400,38 @@ export default function Home() {
     if (!sessionIdRef.current) return;
 
     try {
-      await fetch('/api/feedback', {
+      // Get last state vector and ensure we have the CURRENT prefDelta
+      // Note: We send the state vector that was already updated by setPreferenceDelta()
+      const lastStateVec = getLastStateVector() || [0.5, 0.5, 0.5, 0.5, 0.5];
+      
+      // The prefDelta at index 4 should reflect the most recent setPreferenceDelta() call
+      // If it hasn't been flushed yet, we might see the old value in the POST
+      console.log('[Home] 📤 Sending feedback:', {
+        event,
+        chosenFormat,
+        stateVector: lastStateVec,
+        prefDeltaInVector: lastStateVec[4],
+        actionId: lastAction?.action_id,
+        timestamp: new Date().toISOString(),
+      });
+
+      const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionIdRef.current,
           event,
           chosen_format: chosenFormat,
-          current_state: getLastStateVector() || [0.5, 0.5, 0.5, 0.5, 0.5],
+          current_state: lastStateVec,
           action_taken: lastAction?.action_id ?? 0,
         }),
       });
+
+      if (!response.ok) {
+        console.warn('[Home] Feedback POST failed:', response.status);
+      } else {
+        console.log('[Home] ✓ Feedback sent successfully');
+      }
     } catch (error) {
       console.warn('[Home] feedback post failed:', error);
     }
@@ -537,7 +689,7 @@ export default function Home() {
         >
           <button
             type="button"
-            onClick={() => setShowPreferenceDelta(true)}
+            onClick={fetchAndShowRecommendation}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -572,7 +724,7 @@ export default function Home() {
               textAlign: 'center',
             }}
           >
-            {selectedFormat}
+            {currentStudyMode}
           </div>
         </div>
       </aside>
@@ -1183,6 +1335,26 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Study Mode Confirmation Modal */}
+      <StudyModeConfirmation
+        open={showStudyModeRecommendation}
+        currentMode={currentStudyMode}
+        suggestedMode={modelSuggestedMode}
+        onAccept={(mode) => {
+          handleStudyModeChoice('accept', mode);
+          handleStudyModeModalClose();
+        }}
+        onReject={() => {
+          handleStudyModeChoice('reject');
+          handleStudyModeModalClose();
+        }}
+        onSelectAlternative={(mode) => {
+          handleStudyModeChoice('alternative', mode);
+          handleStudyModeModalClose();
+        }}
+        onClose={handleStudyModeModalClose}
+      />
 
       {/* PreferenceDelta Modal */}
       <PreferenceDelta
