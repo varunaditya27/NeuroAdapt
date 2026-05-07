@@ -6,10 +6,21 @@ import { STATE_VECTOR_DIM, TELEMETRY_INTERVAL } from '../shared_config.js';
  * Computes and POSTs a normalised 5-signal state vector to /api/state every 30 seconds.
  */
 
+// Persistent state vectors (stored in sessionStorage for cross-page persistence)
+const _getStoredVector = () => {
+  if (typeof window === 'undefined') return [0, 0, 1, 0, 1.0];
+  const stored = window.sessionStorage.getItem('neuroadapt_last_state_vector');
+  return stored ? JSON.parse(stored) : [0, 0, 1, 0, 1.0];
+};
+const _saveVector = (v) => {
+  if (typeof window !== 'undefined')
+    window.sessionStorage.setItem('neuroadapt_last_state_vector', JSON.stringify(v));
+};
+
 // Module state
 let sessionId = null;
 let flushIntervalId = null;
-let lastStateVector = [0, 0, 1, 0, 1.0]; // Store last computed values [dwell, jitter, focus, stall, pref_delta]
+let lastStateVector = _getStoredVector();
 
 // 30-second window counters and state
 let timeOnSlideMs = 0;
@@ -267,6 +278,7 @@ async function flush() {
 
     // Store last state vector for Dashboard to read on mount
     lastStateVector = stateVector;
+    _saveVector(stateVector);
 
     // Reset counters for the next 30-second window
     resetWindowCounters();
@@ -303,7 +315,7 @@ function setPreferenceDelta(value) {
   const newValue = clamp(value, 0, 1);
   const oldValue = preferenceDelta;
   preferenceDelta = newValue;
-  
+
   console.log('[Observer] Preference Delta Updated:', {
     old: oldValue,
     new: newValue,
@@ -384,6 +396,7 @@ async function endLesson(metadata = null) {
 
     // Store for dashboard
     lastStateVector = stateVector;
+    _saveVector(stateVector);
     resetWindowCounters();
   } catch (error) {
     console.error('[Observer] Failed to send lesson completion telemetry:', error);

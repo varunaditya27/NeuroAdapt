@@ -1,0 +1,7 @@
+complete: 9.0
+answer_correct: 0.5
+format_choice: 0.2
+energy_bar: -2.0
+stability_bonus: 0.3
+tab_switch_penalty: -0.3
+overload_penalty: -0.5
