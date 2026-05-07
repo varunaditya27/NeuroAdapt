@@ -8,15 +8,14 @@ from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
 
-from generators.analogy_engine import generate_analogies
-from generators.chunk_renderer import chunk_text
-from generators.image_gen import generate_image
+#from generators.analogy_engine import generate_analogies
+#from generators.chunk_renderer import chunk_text
+#from generators.image_gen import generate_image
 from generators.kokoro_tts import generate_tts
-from generators.liveportrait_avatar import generate_avatar_video
+#from generators.liveportrait_avatar import generate_avatar_video
 from generators.manim_gen import generate_manim_animation
 from generators.quiz_injector import generate_quiz
 from generators.text_simplify import simplify_text
-from generators.typography_morpher import morph_typography
 from models.request_schemas import GenerateRequest, PrefetchRequest
 from orchestration.hyperfocus_gate import check_hyperfocus
 from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_with_timeout
@@ -24,9 +23,6 @@ from orchestration.prefetch_manager import prefetch_manager
 from utils.av_sync import generate_webvtt_metadata
 
 logger = logging.getLogger(__name__)
-
-_LAST_CSS_BY_SESSION: Dict[str, Dict[str, str]] = {}
-_MAX_SESSION_CSS_ENTRIES = max(100, int(os.getenv("MAX_SESSION_CSS_ENTRIES", "5000")))
 
 _CONTENT_TYPE_NORMALIZATION = {
     "animation": "animation",
@@ -98,12 +94,6 @@ def _get_env_float(name: str, default: float) -> float:
         return float(raw)
     except ValueError:
         return default
-
-
-def _prune_css_session_cache() -> None:
-    overflow = len(_LAST_CSS_BY_SESSION) - _MAX_SESSION_CSS_ENTRIES
-    for _ in range(max(0, overflow)):
-        _LAST_CSS_BY_SESSION.pop(next(iter(_LAST_CSS_BY_SESSION)), None)
 
 
 def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
