@@ -131,6 +131,24 @@ export default function Home() {
     });
     setLessonDuration(duration);
     lessonStartTimeRef.current = null;
+
+    // Post feedback so reward signal is stored in replay_buffer (closes the RLHF loop)
+    await postFeedback('complete');
+
+    // Pre-fetch the model's recommended next action
+    try {
+      const res = await fetch(
+        `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}`,
+        { cache: 'no-store' }
+      );
+      if (res.ok) {
+        const action = await res.json();
+        setLastAction(action);
+        console.log('[Home] Next recommended action:', action.action_name);
+      }
+    } catch (err) {
+      console.warn('[Home] Failed to pre-fetch next action:', err);
+    }
     
     // Navigate back to topics
     setView('topics');

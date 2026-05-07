@@ -100,6 +100,20 @@ async def ensure_schema() -> None:
         "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
+        """
+        CREATE TABLE IF NOT EXISTS lesson_events (
+            id BIGSERIAL PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            subject TEXT,
+            topic TEXT,
+            duration_ms INTEGER,
+            final_slide INTEGER,
+            total_slides INTEGER,
+            state JSONB,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC)",
     ]
     async with engine.begin() as conn:
         for statement in statements:

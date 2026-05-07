@@ -80,3 +80,31 @@ async def fetch_latest_state(db: AsyncSession, session_id: str) -> list[float] |
     if isinstance(raw_state, list):
         return [float(value) for value in raw_state]
     return None
+
+
+async def persist_lesson_event(
+    db: AsyncSession,
+    session_id: str,
+    metadata: dict,
+    duration_ms: int | None,
+    state: list[float],
+) -> None:
+    await db.execute(
+        text(
+            """
+            INSERT INTO lesson_events
+                (session_id, subject, topic, duration_ms, final_slide, total_slides, state)
+            VALUES
+                (:session_id, :subject, :topic, :duration_ms, :final_slide, :total_slides, :state)
+            """
+        ),
+        {
+            "session_id": session_id,
+            "subject": metadata.get("subject"),
+            "topic": metadata.get("topic"),
+            "duration_ms": duration_ms,
+            "final_slide": metadata.get("current_slide"),
+            "total_slides": metadata.get("total_slides"),
+            "state": json.dumps(state),
+        },
+    )
