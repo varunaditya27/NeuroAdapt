@@ -220,7 +220,8 @@ def _generate_quiz_with_llm(
         )
         
         # Parse JSON array from response
-        questions = json.loads(response)
+        parsed = json.loads(response)
+        questions = parsed.get("questions") if isinstance(parsed, dict) else parsed
         if isinstance(questions, list) and len(questions) == 3:
             # Validate structure
             for q in questions:

@@ -39,10 +39,7 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================================
 
-_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-_GROQ_MODEL = os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
-_GROQ_AVAILABLE = bool(_GROQ_API_KEY)
-
+_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 _OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 _OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e2b")
 
@@ -51,8 +48,41 @@ _GROQ_CLIENT: Any = None
 _OLLAMA_INITIALIZED: bool = False
 
 logger.info(
-    f"LLM Provider: {'Groq available (fallback: Ollama)' if _GROQ_AVAILABLE else 'Ollama only'}"
+    "LLM Provider: Groq primary when GROQ_API_KEY is configured; Ollama is optional fallback"
 )
+
+
+def _groq_api_key() -> str:
+    direct_key = os.getenv("GROQ_API_KEY", "").strip()
+    if direct_key:
+        return direct_key
+
+    key_file = os.getenv("GROQ_API_KEY_FILE", "").strip()
+    if key_file:
+        try:
+            return open(key_file, encoding="utf-8").read().strip()
+        except Exception:
+            return ""
+
+    env_file = os.getenv("NEUROADAPT_ENV_FILE", "").strip()
+    if env_file:
+        try:
+            with open(env_file, encoding="utf-8") as handle:
+                for line in handle:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or "=" not in stripped:
+                        continue
+                    key, value = stripped.split("=", 1)
+                    if key.strip() == "GROQ_API_KEY":
+                        return value.strip().strip('"').strip("'")
+        except Exception:
+            return ""
+
+    return ""
+
+
+def _groq_model() -> str:
+    return os.getenv("GROQ_MODEL", _GROQ_MODEL)
 
 
 # ============================================================================
@@ -66,14 +96,15 @@ def _init_groq() -> Optional[Any]:
     if _GROQ_CLIENT is not None:
         return _GROQ_CLIENT
 
-    if not _GROQ_AVAILABLE:
+    api_key = _groq_api_key()
+    if not api_key:
         return None
 
     try:
         from groq import Groq
 
-        _GROQ_CLIENT = Groq(api_key=_GROQ_API_KEY)
-        logger.info(f"✓ Groq client initialized (model: {_GROQ_MODEL})")
+        _GROQ_CLIENT = Groq(api_key=api_key)
+        logger.info(f"✓ Groq client initialized (model: {_groq_model()})")
         return _GROQ_CLIENT
     except ImportError:
         logger.warning("Groq SDK not installed; falling back to Ollama only")
@@ -85,7 +116,7 @@ def _init_groq() -> Optional[Any]:
 
 def get_active_provider() -> str:
     """Return the active LLM provider name."""
-    if _GROQ_AVAILABLE and _init_groq() is not None:
+    if _groq_api_key() and _init_groq() is not None:
         return "groq"
     return "ollama"
 
@@ -97,7 +128,7 @@ def get_llm_client() -> Any:
     Returns:
         Groq client if available, otherwise returns Ollama URL string.
     """
-    if _GROQ_AVAILABLE:
+    if _groq_api_key():
         client = _init_groq()
         if client is not None:
             return client
@@ -144,7 +175,7 @@ def _call_groq(
     messages.append({"role": "user", "content": prompt})
 
     kwargs = {
-        "model": _GROQ_MODEL,
+        "model": _groq_model(),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -252,7 +283,7 @@ def call_llm(
     """
     # Explicit provider request
     if provider == "groq":
-        if not _GROQ_AVAILABLE or _init_groq() is None:
+        if not _groq_api_key() or _init_groq() is None:
             raise RuntimeError("Groq requested but API key not configured")
         logger.debug("Using Groq (explicit request)")
         return _call_groq(

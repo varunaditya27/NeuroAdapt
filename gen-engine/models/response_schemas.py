@@ -59,6 +59,10 @@ class ContentPayload(BaseModel):
 
     encouragement_text: Optional[str] = Field(None, description="Motivational text")
     title: Optional[str] = Field(None, description="Content title")
+    warning: Optional[str] = Field(None, description="Fallback or degradation warning")
+    fallback_stage: Optional[str] = Field(None, description="Fallback stage if any")
+    generation_mode: Optional[str] = Field(None, description="Generation/fallback mode")
+    css_variables: Optional[Dict[str, str]] = Field(None, description="Typography CSS variables")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -190,6 +194,7 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="Overall health status")
     timestamp: str = Field(..., description="Health check timestamp")
+    groq_reachable: bool = Field(..., description="Whether Groq is configured and ready")
     ollama_reachable: bool = Field(..., description="Whether Ollama is currently reachable")
     kokoro_reachable: bool = Field(..., description="Whether Kokoro TTS is currently reachable")
     llm_provider: Optional[LLMProviderInfo] = Field(None, description="Active LLM provider status")

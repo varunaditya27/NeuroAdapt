@@ -1,0 +1,31 @@
+services:
+  backend:
+    volumes:
+      - ../backend:/app/backend
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      LOG_LEVEL: DEBUG
+
+  frontend:
+    build:
+      target: deps
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: ["npm", "run", "dev"]
+    environment:
+      NODE_ENV: development
+
+  gen-engine:
+    volumes:
+      - ../gen-engine:/home/app
+      - gen_engine_logs:/home/app/logs
+      - gen_engine_cache:/home/app/cache
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    environment:
+      LOG_LEVEL: DEBUG
+
+volumes:
+  gen_engine_logs:
+  gen_engine_cache:

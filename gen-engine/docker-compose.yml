@@ -18,25 +18,25 @@
 #   - ~30GB disk space (models + containers)
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: neuroadapt-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    networks:
-      - neuroadapt
-    restart: unless-stopped
-    environment:
-      - OLLAMA_HOST=0.0.0.0:11434
-      - OLLAMA_KEEP_ALIVE=30m
-      - OLLAMA_NUM_THREADS=8
-    logging:
-      driver: "local"
-      options:
-        max-size: "10m"
-        max-file: "3"
+#  ollama:
+#    image: ollama/ollama:latest
+#    container_name: neuroadapt-ollama
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ollama-models:/root/.ollama
+#    networks:
+#      - neuroadapt
+#    restart: unless-stopped
+#    environment:
+#      - OLLAMA_HOST=0.0.0.0:11434
+#      - OLLAMA_KEEP_ALIVE=30m
+#      - OLLAMA_NUM_THREADS=8
+#    logging:
+#      driver: "local"
+#      options:
+#        max-size: "10m"
+#        max-file: "3"
 
   kokoro-tts:
     # Build from local Dockerfile — do not use inline pip install
@@ -108,14 +108,14 @@ services:
       kokoro-tts:
         condition: service_healthy
       # Ollama doesn't need a health check — gen-engine will handle connection gracefully
-      ollama:
-        condition: service_started
+#      ollama:
+#        condition: service_started
       postgres:
         condition: service_healthy
     env_file:
       - .env  # Use .env for secrets and overrides; see .env.example
     environment:
-      - OLLAMA_URL=http://ollama:11434
+#      - OLLAMA_URL=http://ollama:11434
       - KOKORO_TTS_URL=http://kokoro-tts:8880
       - TTS_URL=http://kokoro-tts:8880
       - DATABASE_URL=${DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
@@ -171,8 +171,8 @@ networks:
     driver: bridge
 
 volumes:
-  ollama-models:
-    driver: local
+#  ollama-models:
+#    driver: local
   kokoro-voices:
     driver: local
   postgres-data:

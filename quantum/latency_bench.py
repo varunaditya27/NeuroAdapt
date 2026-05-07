@@ -18,7 +18,7 @@ try:
     from quantum.pennylane_vqc import QuantumDDQN
 except ModuleNotFoundError:
     from pennylane_vqc import QuantumDDQN
-from shared_config import N_QUBITS
+from backend.shared_config import N_QUBITS
 
 
 def benchmark(iterations: int, checkpoint: str) -> tuple[float, float]:

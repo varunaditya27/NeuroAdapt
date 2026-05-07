@@ -1,13 +1,14 @@
-import json
 import math
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db import redis_client
+from backend.db import get_db
 from backend.models.action import ActionResponse
-from shared_config import ACTION_NAMES, ACTION_SPACE, CONFIDENCE_GATE, STATE_VECTOR_DIM
+from backend.shared_config import ACTION_NAMES, ACTION_SPACE, CONFIDENCE_GATE, STATE_VECTOR_DIM
+from backend.services.state_store import fetch_latest_state, get_cached_state
 
 router = APIRouter(prefix="/api", tags=["action"])
 
@@ -25,14 +26,37 @@ def _softmax_confidence(logits: list[float]) -> float:
 
 def _placeholder_q_values(vector: list[float]) -> list[float]:
     dwell, jitter, focus, stall, pref_delta = vector
-    return [
-        0.4 + (focus * 0.2),
-        jitter * 0.9,
-        dwell * 1.1,
-        pref_delta * 0.8,
-        stall * 1.0,
-        max(stall, jitter) * 1.2,
-    ]
+    scores = [0.0 for _ in range(ACTION_SPACE)]
+
+    if max(stall, jitter) >= 0.78:
+        action_id = 5
+        signal_strength = max(stall, jitter)
+    elif dwell >= 0.68:
+        action_id = 2
+        signal_strength = dwell
+    elif pref_delta >= 0.68:
+        action_id = 3
+        signal_strength = pref_delta
+    elif stall >= 0.55:
+        action_id = 4
+        signal_strength = stall
+    elif focus <= 0.30 or jitter >= 0.55:
+        action_id = 1
+        signal_strength = max(1.0 - focus, jitter)
+    else:
+        action_id = 0
+        signal_strength = focus
+
+    scores[action_id] = 3.2 + signal_strength
+    return scores
+
+
+def _policy_source() -> str:
+    if _model is not None:
+        return "quantum_checkpoint"
+    if _model_load_error:
+        return "heuristic_fallback"
+    return "heuristic"
 
 
 def _load_model_if_available() -> None:
@@ -43,7 +67,7 @@ def _load_model_if_available() -> None:
 
     _model_load_attempted = True
 
-    checkpoint_path = Path(os.getenv("MODEL_CHECKPOINT", "quantum/checkpoints/latest.pt"))
+    checkpoint_path = Path(os.getenv("MODEL_CHECKPOINT", "/app/quantum/checkpoints/latest.pt"))
 
     try:
         import torch
@@ -52,8 +76,10 @@ def _load_model_if_available() -> None:
 
         model = QuantumDDQN()
         if checkpoint_path.exists():
-            state_dict = torch.load(checkpoint_path, map_location="cpu")
+            state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             model.load_state_dict(state_dict)
+        else:
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         model.eval()
         _model = model
     except Exception as exc:
@@ -77,24 +103,19 @@ def _infer_q_values(vector: list[float]) -> list[float]:
 
 
 @router.get("/action", response_model=ActionResponse)
-async def get_action(session_id: str = Query(..., min_length=1)) -> ActionResponse:
-    key = f"state:{session_id}"
-
-    try:
-        cached_value = await redis_client.get(key)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Redis unavailable: {exc}") from exc
-
-    if cached_value is None:
-        raise HTTPException(status_code=404, detail="No state found for session_id")
-
-    try:
-        vector = json.loads(cached_value)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Corrupt cached state payload") from exc
+async def get_action(
+    session_id: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+) -> ActionResponse:
+    vector = get_cached_state(session_id)
+    if vector is None:
+        try:
+            vector = await fetch_latest_state(db, session_id)
+        except Exception:
+            vector = None
 
     if not isinstance(vector, list) or len(vector) != STATE_VECTOR_DIM:
-        raise HTTPException(status_code=422, detail="State vector shape is invalid")
+        raise HTTPException(status_code=404, detail="No state found for session_id")
 
     q_values = _infer_q_values([float(value) for value in vector])
 
@@ -111,4 +132,6 @@ async def get_action(session_id: str = Query(..., min_length=1)) -> ActionRespon
         confidence=confidence,
         gated=gated,
         action_name=ACTION_NAMES.get(action_id, "unknown"),
+        q_values=q_values,
+        policy_source=_policy_source(),
     )
