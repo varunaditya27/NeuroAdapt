@@ -10,6 +10,10 @@ class StateVector(BaseModel):
     focus: float = Field(default=0.0, ge=0.0, le=1.0)
     stall: float = Field(default=0.0, ge=0.0, le=1.0)
     pref_delta: float = Field(default=0.0, ge=0.0, le=1.0)
+    timestamp: str | None = Field(default=None)
+    event_type: str | None = Field(default=None)
+    lesson_metadata: dict[str, Any] | None = Field(default=None)
+    duration_ms: int | None = Field(default=None)
 
     @model_validator(mode="before")
     @classmethod

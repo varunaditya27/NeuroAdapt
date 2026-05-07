@@ -1,0 +1,14 @@
+{
+  "episode_rewards": [
+    -0.2,
+    0.0
+  ],
+  "pref_delta_history": [
+    0.51875,
+    0.51875
+  ],
+  "loss_history": [
+    0.0,
+    0.0
+  ]
+}
