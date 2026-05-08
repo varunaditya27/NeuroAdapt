@@ -19,6 +19,12 @@ export default function Dashboard() {
     pref_delta: 0,
   });
 
+  const [lastSentPrefDelta, setLastSentPrefDelta] = useState({
+    value: null,
+    timestamp: null,
+    choice: null,
+  });
+
   useEffect(() => {
     // Read last state vector immediately on mount
     const lastVector = getLastStateVector();
@@ -34,6 +40,16 @@ export default function Dashboard() {
       ...prev,
       avgDwell: lastVector[0].toFixed(2),
     }));
+
+    // Read last sent prefDelta from localStorage
+    try {
+      const stored = localStorage.getItem('lastSentPrefDelta');
+      if (stored) {
+        setLastSentPrefDelta(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error('Failed to read lastSentPrefDelta from localStorage:', e);
+    }
 
     // Wire up the global flush callback for future updates
     window.__onObserverFlush = (data) => {
@@ -52,8 +68,22 @@ export default function Dashboard() {
       });
     };
 
+    // Listen for prefDelta changes from other tabs/storage events
+    const handleStorageChange = () => {
+      try {
+        const stored = localStorage.getItem('lastSentPrefDelta');
+        if (stored) {
+          setLastSentPrefDelta(JSON.parse(stored));
+        }
+      } catch (e) {
+        console.error('Failed to update lastSentPrefDelta:', e);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
     return () => {
       delete window.__onObserverFlush;
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
@@ -191,6 +221,66 @@ export default function Dashboard() {
           <SignalBar label="Focus" value={stateVector.focus} />
           <SignalBar label="Stall Duration" value={stateVector.stall} />
           <SignalBar label="Preference Δ" value={stateVector.pref_delta} />
+        </div>
+
+        {/* Last Sent Preference Delta */}
+        <div
+          style={{
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: '24px',
+            marginTop: '24px',
+          }}
+        >
+          <h2
+            style={{
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--navy)',
+              marginBottom: '16px',
+            }}
+          >
+            Last Preference Δ Sent to Backend
+          </h2>
+          {lastSentPrefDelta.value !== null ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '6px' }}>
+                  Value
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--teal)' }}>
+                  {lastSentPrefDelta.value === 1 ? '✓ 1' : lastSentPrefDelta.value === 0 ? '✗ 0' : '≈ 0.5'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '6px' }}>
+                  User Choice
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+                  {lastSentPrefDelta.choice === 'accept'
+                    ? '👍 Accepted'
+                    : lastSentPrefDelta.choice === 'reject'
+                    ? '👎 Rejected'
+                    : lastSentPrefDelta.choice === 'alternative'
+                    ? '🔄 Alternative'
+                    : 'Unknown'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '6px' }}>
+                  Sent At
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text)', fontFamily: 'monospace' }}>
+                  {new Date(lastSentPrefDelta.timestamp).toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: 'var(--muted)', fontSize: '14px', fontStyle: 'italic' }}>
+              Awaiting first study mode choice...
+            </div>
+          )}
         </div>
 
         {/* Placeholder Sections */}

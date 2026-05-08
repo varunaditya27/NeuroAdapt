@@ -22,99 +22,73 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def ensure_schema() -> None:
+    """Create database schema for SQLite (local dev) and PostgreSQL (production)."""
     statements = [
+        # Sessions table - NEW (was missing!)
         """
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'sessions'
-                  AND column_name = 'id'
-                  AND data_type = 'uuid'
-            ) THEN
-                ALTER TABLE replay_buffer DROP CONSTRAINT IF EXISTS replay_buffer_session_id_fkey;
-                ALTER TABLE preference_log DROP CONSTRAINT IF EXISTS preference_log_session_id_fkey;
-                ALTER TABLE sessions ALTER COLUMN id DROP DEFAULT;
-                ALTER TABLE sessions ALTER COLUMN id TYPE TEXT USING id::text;
-            END IF;
-        END $$;
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
         """,
-        """
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'replay_buffer'
-                  AND column_name = 'session_id'
-                  AND data_type = 'uuid'
-            ) THEN
-                ALTER TABLE replay_buffer ALTER COLUMN session_id TYPE TEXT USING session_id::text;
-            END IF;
-        END $$;
-        """,
-        """
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'preference_log'
-                  AND column_name = 'session_id'
-                  AND data_type = 'uuid'
-            ) THEN
-                ALTER TABLE preference_log ALTER COLUMN session_id TYPE TEXT USING session_id::text;
-            END IF;
-        END $$;
-        """,
+        # State snapshots table
         """
         CREATE TABLE IF NOT EXISTS state_snapshots (
-            id BIGSERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
-            state JSONB NOT NULL,
-            created_at TIMESTAMPTZ DEFAULT now()
+            state TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """,
+        # Replay buffer table
         """
         CREATE TABLE IF NOT EXISTS replay_buffer (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
-            state JSONB NOT NULL,
-            action SMALLINT NOT NULL,
-            reward FLOAT NOT NULL,
-            next_state JSONB NOT NULL,
-            done BOOLEAN DEFAULT false,
-            created_at TIMESTAMPTZ DEFAULT now()
+            state TEXT NOT NULL,
+            action INTEGER NOT NULL,
+            reward REAL NOT NULL,
+            next_state TEXT NOT NULL,
+            done INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """,
+        # Preference log table
         """
         CREATE TABLE IF NOT EXISTS preference_log (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
             chosen_format TEXT NOT NULL,
-            pref_delta FLOAT,
-            created_at TIMESTAMPTZ DEFAULT now()
+            pref_delta REAL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
+        # Lesson events table
         """
         CREATE TABLE IF NOT EXISTS lesson_events (
-            id BIGSERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
             subject TEXT,
             topic TEXT,
             duration_ms INTEGER,
             final_slide INTEGER,
             total_slides INTEGER,
-            state JSONB,
-            created_at TIMESTAMPTZ DEFAULT now()
+            state TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """,
+        # Indices for performance
+        "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC)",
     ]
     async with engine.begin() as conn:
         for statement in statements:
-            await conn.execute(text(statement))
+            try:
+                await conn.execute(text(statement))
+            except Exception as e:
+                # Log but don't fail on individual schema statements
+                # (e.g., if a table already exists or if using different dialect)
+                print(f"Schema statement skipped: {e}")

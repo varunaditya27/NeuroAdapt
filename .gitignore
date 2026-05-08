@@ -10,8 +10,23 @@ gen-engine/venv2/
 # Local environment files
 .env
 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
 # Quantum training artifacts
 quantum/checkpoints/*.pt
 quantum/checkpoints/*_history.json
 quantum/ablation_c_smoke.png
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 

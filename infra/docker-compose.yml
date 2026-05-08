@@ -98,7 +98,6 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      PROMETHEUS_ENABLED: "true"
     # Bind mounts so logs/cache are directly tail-able from the host
     volumes:
       - ../gen-engine/logs:/home/app/logs
@@ -197,33 +196,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-
-  # ── Observability ─────────────────────────────────────────────────────────
-
-  prometheus:
-    image: prom/prometheus:latest
-    restart: unless-stopped
-    # No depends_on — Prometheus tolerates unreachable scrape targets gracefully.
-    # Waiting for backend + gen-engine to be healthy only delays the stack.
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=200h"
-      - "--web.enable-lifecycle"
-    networks:
-      - neuroadapt
-    logging:
-      driver: "local"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 
   # ── Batch Jobs ────────────────────────────────────────────────────────────
 
