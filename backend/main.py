@@ -5,7 +5,11 @@ from backend.db import ensure_schema
 from backend.routers.action import router as action_router
 from backend.routers.feedback import router as feedback_router
 from backend.routers.health import router as health_router
+from backend.routers.session import router as session_router
+from backend.routers.lessons import router as lessons_router
+from backend.routers.preferences import router as preferences_router
 from backend.routers.state import router as state_router
+from backend.routers.state_history import router as state_history_router
 
 
 def create_app() -> FastAPI:
@@ -24,7 +28,11 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(session_router)
+    app.include_router(lessons_router)
+    app.include_router(preferences_router)
     app.include_router(state_router)
+    app.include_router(state_history_router)
     app.include_router(action_router)
     app.include_router(feedback_router)
 
