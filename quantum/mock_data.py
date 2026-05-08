@@ -74,16 +74,14 @@ except Exception:
     def heuristic_action(state: list[float]) -> int:  # type: ignore[misc]
         dwell, jitter, focus, stall, pref_delta = state
         if max(stall, jitter) > 0.75:
-            return 5  # Sensory Break
-        if dwell > 0.70:
-            return 2  # Simplify Text
-        if pref_delta > 0.70:
-            return 3  # Switch to Video
+            return 4  # Sensory Break
         if stall > 0.55:
-            return 4  # Inject Gamified Task
-        if focus < 0.25:
-            return 1  # Soft Nudge
-        return 0       # Hold Course
+            return 3  # Inject Gamified Task
+        if pref_delta == 0.0:
+            return 2  # Switch to Video
+        if dwell > 0.70:
+            return 1  # Audio
+        return 0       # Text
 
 
 # ---------------------------------------------------------------------------
@@ -325,19 +323,19 @@ def compute_signal_reward(
     # Energy Bar: break forced by learner under severe overload
     # Penalise only when the learner was genuinely overloaded (stall + jitter high)
     # — distinguishes "learner needed a break" from "policy chose break correctly"
-    if action == 5 and stall > 0.75 and jitter > 0.75 and focus >= 0.25:
+    if action == 4 and stall > 0.75 and jitter > 0.75 and focus >= 0.25:
         reward += REWARD_WEIGHTS["energy_bar"]
 
     # Format preference match
-    # High pref_delta (>0.65) means the learner wants a format change.
-    # Action 2 (simplify) or 3 (video) honours that.
-    if pref_delta > 0.65 and action in (2, 3):
+    # A pref_delta of 0 means the learner wants a format change.
+    # Actions 0 (text), 1 (audio), or 2 (video) honour that.
+    if pref_delta == 0 and action in (0, 1, 2):
         reward += REWARD_WEIGHTS["format_choice"]
 
     # Quiz correct answer
-    # Action 4 (quiz) with low stall → learner was engaged enough to answer.
+    # Action 3 (quiz) with low stall → learner was engaged enough to answer.
     # Probability reflects archetype-specific comprehension level.
-    if action == 4 and stall < 0.40:
+    if action == 3 and stall < 0.40:
         if rng.random() < quiz_correct_p:
             reward += REWARD_WEIGHTS["answer_correct"]
 
@@ -360,14 +358,21 @@ def generate_episode(
     predictable within-archetype patterns — matching the clinical literature
     on ADHD attention cycles — rather than purely stochastic noise.
     """
-    state = _sample_from_profile(cfg.base_profile, rng)
+    hidden_state = _sample_from_profile(cfg.base_profile, rng)
     transitions: list[dict] = []
 
     for step in range(steps):
         in_lapse = _is_in_lapse(step, cfg)
         active_profile = cfg.lapse_profile if in_lapse else cfg.base_profile
 
-        next_state = _evolve_state(state, active_profile, rng, cfg.momentum)
+        next_hidden_state = _evolve_state(hidden_state, active_profile, rng, cfg.momentum)
+
+        # Binarize pref_delta for the agent state
+        state = list(hidden_state)
+        state[4] = 0.0 if state[4] > 0.65 else 1.0
+        
+        next_state = list(next_hidden_state)
+        next_state[4] = 0.0 if next_state[4] > 0.65 else 1.0
 
         if rng.random() < 0.15:
             action = rng.randint(0, N_ACTIONS - 1)
@@ -392,7 +397,7 @@ def generate_episode(
         if done:
             break
 
-        state = next_state
+        hidden_state = next_hidden_state
 
     return transitions
 
@@ -457,7 +462,7 @@ def generate_dataset(
             "transitions":   flat,
         }
 
-        out_path = out_dir / f"{key}_2.json"
+        out_path = out_dir / f"{key}.json"
         out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         output_paths[key] = out_path
 
@@ -472,7 +477,7 @@ def generate_dataset(
             f"done {done_count:4d} | "
             f"{action_str}"
         )
-        print(f"            → {out_path}")
+        print(f"            -> {out_path}")
 
     return output_paths
 
@@ -499,7 +504,7 @@ def main() -> None:
 
     print(f"\n[mock_data] Generating synthetic pre-training data")
     print(f"            episodes={args.episodes}  steps={args.steps}  seed={args.seed}")
-    print(f"            output → {out_dir}\n")
+    print(f"            output -> {out_dir}\n")
 
     paths = generate_dataset(
         episodes=args.episodes,

@@ -4,7 +4,7 @@ This file is the single source of truth for shared constants.
 """
 
 STATE_VECTOR_DIM = 5
-ACTION_SPACE = 6
+ACTION_SPACE = 5
 N_QUBITS = 5
 N_ACTIONS = ACTION_SPACE
 
@@ -22,10 +22,9 @@ CONFIDENCE_GATE = 0.60
 TELEMETRY_INTERVAL = 30_000
 
 ACTION_NAMES = {
-    0: "hold_course",
-    1: "soft_nudge",
-    2: "simplify_text",
-    3: "switch_video",
-    4: "gamified_task",
-    5: "sensory_break",
+    0: "text",
+    1: "audio",
+    2: "video",
+    3: "quiz",
+    4: "sensory_break",
 }

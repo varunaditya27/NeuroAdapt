@@ -109,7 +109,7 @@ def compute_reward(
     Parameters
     ----------
     state          : [dwell, jitter, focus, stall, pref_delta] all in [0, 1]
-    action         : chosen action index (0-5)
+    action         : chosen action index (0-4)
     next_state     : next [dwell, jitter, focus, stall, pref_delta]
     done           : whether this transition ends the episode
     rng            : caller-owned Random instance (keeps function deterministic)
@@ -152,18 +152,18 @@ def compute_reward(
     # Only penalise when learner was genuinely overloaded (both signals > 0.75)
     # AND still had enough focus to continue (focus >= 0.25).
     # Distinguishes "policy chose break correctly" from "break was avoidable".
-    if action == 5 and stall > 0.75 and jitter > 0.75 and focus >= 0.25:
+    if action == 4 and stall > 0.75 and jitter > 0.75 and focus >= 0.25:
         reward += WEIGHTS["energy_bar"]
 
     # ── Format preference match ───────────────────────────────────────────────
-    # High pref_delta (>0.65) signals the learner wants a content format change.
-    # Action 2 (Simplify Text) or 3 (Switch to Video) honours that preference.
-    if pref_delta > 0.65 and action in (2, 3):
+    # A pref_delta of 0 signals the learner wants a content format change.
+    # Actions 0 (Text), 1 (Audio), or 2 (Video) honour that preference.
+    if pref_delta == 0 and action in (0, 1, 2):
         reward += WEIGHTS["format_choice"]
 
     # ── Quiz correct answer ───────────────────────────────────────────────────
-    # Action 4 (Inject Gamified Task / quiz) with low stall → learner engaged.
-    if action == 4 and stall < 0.40:
+    # Action 3 (Inject Gamified Task / quiz) with low stall → learner engaged.
+    if action == 3 and stall < 0.40:
         if rng.random() < quiz_correct_p:
             reward += WEIGHTS["answer_correct"]
 

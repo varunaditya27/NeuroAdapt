@@ -102,6 +102,41 @@ def _save_plot_or_csv(
             encoding="utf-8",
         )
 
+def _save_loss_plot(
+    quantum_loss: list[float],
+    classical_loss: list[float],
+    output: Path,
+) -> None:
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        def ma20(x, w=20):
+            out = []
+            s = 0.0
+            for i, v in enumerate(x):
+                s += v
+                if i >= w: s -= x[i - w]
+                out.append(s / min(i + 1, w))
+            return out
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(ma20(quantum_loss), label="VQC DDQN Loss (MA20)", color='#1f63ff', linewidth=2.2)
+        plt.plot(ma20(classical_loss), label="Classical DDQN Loss (MA20)", color='#d9531e', linewidth=2.2)
+
+        plt.title("Ablation C: Training Loss")
+        plt.xlabel("Episode")
+        plt.ylabel("Loss (MA20 Smoothed)")
+        plt.legend()
+        plt.grid(alpha=0.25)
+        plt.tight_layout()
+        
+        plt.savefig(output)
+        plt.close()
+    except Exception as e:
+        print(f"Failed to plot loss: {e}")
+
+
 
 def _parse_seeds(raw: str) -> list[int]:
     return [int(token.strip()) for token in raw.split(",") if token.strip()]
@@ -133,6 +168,8 @@ def main() -> None:
 
     quantum_histories: list[list[float]] = []
     classical_histories: list[list[float]] = []
+    quantum_loss_histories: list[list[float]] = []
+    classical_loss_histories: list[list[float]] = []
 
     for seed in seeds:
         quantum_result = run_training(
@@ -173,9 +210,14 @@ def main() -> None:
 
         quantum_histories.append(quantum_result.preference_delta_history)
         classical_histories.append(classical_result.preference_delta_history)
+        quantum_loss_histories.append(quantum_result.loss_history)
+        classical_loss_histories.append(classical_result.loss_history)
 
     quantum_mean, quantum_std = _mean_and_std(quantum_histories)
     classical_mean, classical_std = _mean_and_std(classical_histories)
+    
+    quantum_loss_mean, _ = _mean_and_std(quantum_loss_histories)
+    classical_loss_mean, _ = _mean_and_std(classical_loss_histories)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,6 +228,13 @@ def main() -> None:
         output_path,
         quantum_std=quantum_std if len(seeds) > 1 else None,
         classical_std=classical_std if len(seeds) > 1 else None,
+    )
+    
+    loss_output_path = output_path.parent / "ablation_c_loss.png"
+    _save_loss_plot(
+        quantum_loss_mean,
+        classical_loss_mean,
+        loss_output_path,
     )
 
 

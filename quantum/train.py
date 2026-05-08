@@ -54,6 +54,7 @@ Transition = tuple[list[float], int, float, list[float], bool]
 class TrainingResult:
     episode_rewards: list[float]
     preference_delta_history: list[float]
+    loss_history: list[float]
 
 
 class ReplayBuffer:
@@ -193,14 +194,12 @@ def heuristic_action(state: list[float]) -> int:
     dwell, jitter, focus, stall, pref_delta = state
 
     if max(stall, jitter) > 0.75:
-        return 5
-    if dwell > 0.70:
-        return 2
-    if pref_delta > 0.70:
-        return 3
-    if stall > 0.55:
         return 4
-    if focus < 0.25:
+    if stall > 0.55:
+        return 3
+    if pref_delta == 0.0:
+        return 2
+    if dwell > 0.70:
         return 1
     return 0
 
@@ -481,6 +480,7 @@ def run_training(
     return TrainingResult(
         episode_rewards=episode_rewards,
         preference_delta_history=preference_delta_history,
+        loss_history=loss_history,
     )
 
 

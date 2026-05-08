@@ -18,12 +18,11 @@
  */
 export function actionIdToStudyMode(actionId) {
   const mapping = {
-    0: null, // hold_course - no mode change recommended
-    1: 'text', // soft_nudge - text mode
-    2: 'text', // simplify_text - text mode
-    3: 'video', // switch_video - video mode
-    4: 'quiz', // gamified_task - quiz mode
-    5: 'audio', // sensory_break - audio mode
+    0: 'text', // text
+    1: 'audio', // audio
+    2: 'video', // video
+    3: 'quiz', // quiz
+    4: 'audio', // sensory_break mapped to audio mode
   };
   return mapping[actionId] ?? null;
 }
@@ -77,8 +76,8 @@ export async function fetchModelStudyModeRecommendation(sessionId) {
     const data = await response.json();
 
     // Check if response is gated (low confidence) - ignore recommendation
-    if (data.gated || data.action_id === 0) {
-      console.log('[StudyModeUtils] Recommendation gated or hold_course');
+    if (data.gated) {
+      console.log('[StudyModeUtils] Recommendation gated');
       return null;
     }
 
