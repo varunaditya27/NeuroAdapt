@@ -47,7 +47,7 @@ async def get_state_history(db: AsyncSession, session_id: str, limit: int = 100)
         return {
             'session_id': session_id,
             'snapshots': snapshots,
-            'count': len(snapshots),
+            'total_count': len(snapshots),
             'limit': limit
         }
     except Exception as e:
