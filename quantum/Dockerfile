@@ -7,9 +7,9 @@ RUN addgroup --system app && adduser --system --ingroup app app
 COPY quantum/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY quantum /app/quantum
-COPY backend /app/backend
-COPY shared_config.py /app/shared_config.py
+COPY --chown=app:app quantum /app/quantum
+COPY --chown=app:app backend /app/backend
+COPY --chown=app:app shared_config.py /app/shared_config.py
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
