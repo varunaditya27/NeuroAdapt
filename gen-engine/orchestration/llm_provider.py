@@ -144,7 +144,7 @@ def _call_groq(
     prompt: str,
     system: str | None = None,
     temperature: float = 0.35,
-    max_tokens: int = 900,
+    max_tokens: int = 8192,
     response_format: Optional[dict[str, Any]] = None,
     timeout_seconds: float = 60.0,
 ) -> str:

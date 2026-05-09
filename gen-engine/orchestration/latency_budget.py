@@ -10,10 +10,10 @@ from typing import Any, Callable, Dict, Tuple
 _TIMEOUTS = {
     "text_simplify": float(os.getenv("LATENCY_BUDGET_TEXT_SIMPLIFY", "450")),
     "analogy": float(os.getenv("LATENCY_BUDGET_ANALOGY", "3")),
-    "quiz": float(os.getenv("LATENCY_BUDGET_QUIZ", "4")),
-    "audio": float(os.getenv("LATENCY_BUDGET_AUDIO", "120")),
+    "quiz": float(os.getenv("LATENCY_BUDGET_QUIZ", "400")),
+    "audio": float(os.getenv("LATENCY_BUDGET_AUDIO", "300")),
     "image": float(os.getenv("LATENCY_BUDGET_IMAGE", "60")),  # Increased from 12s (image generation is slow)
-    "manim": float(os.getenv("LATENCY_BUDGET_MANIM", "600")),
+    "manim": float(os.getenv("LATENCY_BUDGET_MANIM", "900")),
     "avatar": float(os.getenv("LATENCY_BUDGET_AVATAR", "20")),
 }
 
