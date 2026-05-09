@@ -13,6 +13,6 @@ class StateSnapshot(BaseModel):
 class StateHistoryResponse(BaseModel):
     """Response model for state history."""
     session_id: str
-    states: List[StateSnapshot]
+    snapshots: List[StateSnapshot]
     count: int = Field(description="Total number of state snapshots returned")
     limit: Optional[int] = None

@@ -64,7 +64,7 @@ async def get_all_lessons() -> dict:
     try:
         return {
             "lessons": LESSON_CATALOGUE,
-            "count": len(LESSON_CATALOGUE)
+            "total_count": len(LESSON_CATALOGUE)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve lessons: {str(e)}")

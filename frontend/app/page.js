@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import EnergyBar from '@/components/EnergyBar';
 import PreferenceDelta from '@/components/PreferenceDelta';
 import StudyModeConfirmation from '@/components/StudyModeConfirmation';
+import QuizRenderer from '@/components/QuizRenderer';
+import VideoRenderer from '@/components/VideoRenderer';
 import {
   init as initObserver,
   destroy as destroyObserver,
@@ -460,22 +462,26 @@ export default function Home() {
 
     const { action_id: actionId, content } = adaptiveContent;
     if (actionId === 4 && Array.isArray(content.quiz_json)) {
+      const mappedQuiz = {
+        title: content.title || 'Quick Check',
+        questions: content.quiz_json.map((question, idx) => ({
+          id: question.id ?? idx + 1,
+          prompt: question.text,
+          options: question.options || [],
+          correct: question.correct_index ?? 0,
+          explanation: question.explanation || '',
+          difficulty: question.difficulty,
+        })),
+      };
+
       return (
-        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px' }}>
-          <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '16px' }}>Quick Check</h2>
-          {content.quiz_json.map((question) => (
-            <div key={question.id} style={{ marginBottom: '18px' }}>
-              <p style={{ fontWeight: 600, marginBottom: '8px' }}>{question.text}</p>
-              <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                {question.options.map((option, index) => (
-                  <li key={option} style={{ marginBottom: '4px' }}>
-                    {option}{index === question.correct_index ? ' ✓' : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <QuizRenderer
+          content={mappedQuiz}
+          onQuizComplete={({ score, total }) => {
+            const event = score === total ? 'answer_correct' : 'answer_incorrect';
+            postFeedback(event);
+          }}
+        />
       );
     }
 
@@ -491,7 +497,16 @@ export default function Home() {
     if (content.video_url || content.image_url || content.audio_url) {
       return (
         <div style={{ marginTop: '32px' }}>
-          {content.video_url && <video src={content.video_url} controls style={{ width: '100%', borderRadius: '8px' }} />}
+          {content.video_url && (
+            <VideoRenderer
+              content={{
+                src: content.video_url,
+                title: content.title || 'Adaptive Video',
+                captionsUrl: content.metadata_vtt || '',
+                transcript: content.simplified_text || content.original_text || '',
+              }}
+            />
+          )}
           {content.image_url && <img src={content.image_url} alt="Generated lesson visual" style={{ width: '100%', borderRadius: '8px' }} />}
           {content.audio_url && <audio src={content.audio_url} controls style={{ width: '100%', marginTop: '12px' }} />}
           {content.simplified_text && <p style={{ marginTop: '16px', lineHeight: 1.7 }}>{content.simplified_text}</p>}

@@ -23,67 +23,127 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def ensure_schema() -> None:
     """Create database schema for SQLite (local dev) and PostgreSQL (production)."""
-    statements = [
-        # Sessions table - NEW (was missing!)
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            student_id TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        # State snapshots table
-        """
-        CREATE TABLE IF NOT EXISTS state_snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            state TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        # Replay buffer table
-        """
-        CREATE TABLE IF NOT EXISTS replay_buffer (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            state TEXT NOT NULL,
-            action INTEGER NOT NULL,
-            reward REAL NOT NULL,
-            next_state TEXT NOT NULL,
-            done INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        # Preference log table
-        """
-        CREATE TABLE IF NOT EXISTS preference_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            chosen_format TEXT NOT NULL,
-            pref_delta REAL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        # Lesson events table
-        """
-        CREATE TABLE IF NOT EXISTS lesson_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            subject TEXT,
-            topic TEXT,
-            duration_ms INTEGER,
-            final_slide INTEGER,
-            total_slides INTEGER,
-            state TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """,
-        # Indices for performance
-        "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC)",
-    ]
+    backend = engine.url.get_backend_name() if engine.url is not None else "sqlite"
+    is_postgres = backend.startswith("postgresql")
+
+    if is_postgres:
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                student_id TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS state_snapshots (
+                id BIGSERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                state JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS replay_buffer (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                state JSONB NOT NULL,
+                action SMALLINT NOT NULL,
+                reward FLOAT NOT NULL,
+                next_state JSONB NOT NULL,
+                done BOOLEAN DEFAULT false,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS preference_log (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                chosen_format TEXT NOT NULL,
+                pref_delta FLOAT,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS lesson_events (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                duration_ms INTEGER,
+                final_slide SMALLINT,
+                total_slides SMALLINT,
+                state JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC)",
+        ]
+    else:
+        statements = [
+            # Sessions table - NEW (was missing!)
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                student_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # State snapshots table
+            """
+            CREATE TABLE IF NOT EXISTS state_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                state TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Replay buffer table
+            """
+            CREATE TABLE IF NOT EXISTS replay_buffer (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                state TEXT NOT NULL,
+                action INTEGER NOT NULL,
+                reward REAL NOT NULL,
+                next_state TEXT NOT NULL,
+                done INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Preference log table
+            """
+            CREATE TABLE IF NOT EXISTS preference_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                chosen_format TEXT NOT NULL,
+                pref_delta REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Lesson events table
+            """
+            CREATE TABLE IF NOT EXISTS lesson_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                subject TEXT,
+                topic TEXT,
+                duration_ms INTEGER,
+                final_slide INTEGER,
+                total_slides INTEGER,
+                state TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Indices for performance
+            "CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC)",
+        ]
     async with engine.begin() as conn:
         for statement in statements:
             try:

@@ -63,9 +63,9 @@ from typing import Any, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
 import requests
-from orchestration.prefetch_manager import prefetch_manager
 from orchestration.llm_provider import verify_llm_provider
 from models.response_schemas import HealthResponse
 from routers.generate import router as generate_router
@@ -108,16 +108,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
-
-# Prometheus metrics
-try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-
-    PROMETHEUS_AVAILABLE = True
-except ImportError:
-    PROMETHEUS_AVAILABLE = False
-    logger.warning("prometheus-client not available, metrics disabled")
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -189,47 +179,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Prometheus metrics
-if PROMETHEUS_AVAILABLE:
-    # Request metrics
-    REQUEST_COUNT = Counter(
-        "gen_engine_requests_total", "Total number of generation requests", ["action_id", "status"]
-    )
-    REQUEST_LATENCY = Histogram(
-        "gen_engine_request_duration_seconds", "Request duration in seconds", ["action_id"]
-    )
-    CACHE_HITS = Counter("gen_engine_cache_hits_total", "Total number of cache hits", ["action_id"])
-    CACHE_MISSES = Counter(
-        "gen_engine_cache_misses_total", "Total number of cache misses", ["action_id"]
-    )
-    CACHE_SIZE = Gauge("gen_engine_cache_size", "Current cache size")
-    FALLBACK_EVENTS = Counter(
-        "gen_engine_fallback_events_total",
-        "Total fallback events emitted by generation flows",
-        ["action_id", "stage"],
-    )
-    TIMEOUT_EVENTS = Counter(
-        "gen_engine_timeout_events_total",
-        "Total timeout-triggered degradation events",
-        ["action_id", "stage"],
-    )
-    HYPERFOCUS_OVERRIDES = Counter(
-        "gen_engine_hyperfocus_overrides_total",
-        "Total no-content responses caused by hyperfocus protection",
-        ["reason"],
-    )
-    FK_VERIFICATION_RESULTS = Counter(
-        "gen_engine_fk_verification_results_total",
-        "FK verification outcomes for text simplification responses",
-        ["target_level", "result"],
-    )
-    PREFETCH_REQUESTS = Counter(
-        "gen_engine_prefetch_requests_total", "Total number of prefetch API requests", ["status"]
-    )
-    PREFETCH_TASKS_QUEUED = Counter(
-        "gen_engine_prefetch_tasks_queued_total",
-        "Total number of speculative tasks queued by prefetch requests",
-    )
+# Serve cached media assets (audio/video/images) for the frontend.
+_CACHE_ROOT = (Path(__file__).parent / "cache").resolve()
+_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=_CACHE_ROOT), name="media")
 
 # Global state (Phase 0: minimal)
 app_state: dict[str, Any] = {
@@ -415,23 +368,6 @@ async def health_check() -> HealthResponse:
             "missing_required": app_state.get("prompt_health", {}).get("missing_required", []),
         },
     )
-
-
-@app.get("/metrics")
-async def metrics() -> Response:
-    """Prometheus metrics endpoint."""
-    if not PROMETHEUS_AVAILABLE:
-        return JSONResponse(status_code=503, content={"error": "Prometheus metrics not available"})
-
-    # Update cache size gauge (prefetch cache is the active generation cache).
-    try:
-        with prefetch_manager._lock:  # noqa: SLF001 - intentional lightweight instrumentation
-            CACHE_SIZE.set(len(prefetch_manager._cache))
-    except Exception:
-        CACHE_SIZE.set(len(app_state["cache"]))
-
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
 
 # Include routers
 app.include_router(generate_router, prefix="/api", tags=["generation"])
