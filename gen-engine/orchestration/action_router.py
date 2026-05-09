@@ -95,6 +95,36 @@ def _get_env_float(name: str, default: float) -> float:
         return default
 
 
+def _public_base_url() -> str:
+    return os.getenv("GEN_ENGINE_PUBLIC_URL") or os.getenv("PUBLIC_BASE_URL") or "http://localhost:8001"
+
+
+def _maybe_public_url(value: str) -> str:
+    if not value:
+        return value
+    if value.startswith(("data:", "http://", "https://")):
+        return value
+
+    try:
+        cache_root = (Path(__file__).resolve().parents[1] / "cache").resolve()
+        candidate = Path(value).resolve()
+        if candidate.is_relative_to(cache_root):
+            relative = candidate.relative_to(cache_root).as_posix()
+            return f"{_public_base_url().rstrip('/')}/media/{relative}"
+    except Exception:
+        return value
+
+    return value
+
+
+def _normalize_media_urls(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in ("audio_url", "video_url", "image_url", "metadata_vtt", "asset_path"):
+        raw = payload.get(key)
+        if isinstance(raw, str):
+            payload[key] = _maybe_public_url(raw)
+    return payload
+
+
 def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
     slide_content = str(request_data.get("slide_content", ""))
     learner_level = str(request_data.get("learner_level", "grade8"))
@@ -390,6 +420,8 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
             payload["chunks"] = chunk_text(str(text_value), chunk_strategy="sentence").get(
                 "chunks", []
             )
+
+    _normalize_media_urls(payload)
 
     return {
         "action_id": request.action_id,

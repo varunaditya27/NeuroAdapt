@@ -21,4 +21,4 @@ class LessonResponse(BaseModel):
 class LessonsListResponse(BaseModel):
     """Response model for lessons catalogue."""
     lessons: List[LessonResponse]
-    count: int = Field(description="Total number of lessons returned")
+    total_count: int = Field(description="Total number of lessons returned")

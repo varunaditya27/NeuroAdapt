@@ -32,6 +32,19 @@ CREATE TABLE IF NOT EXISTS preference_log (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS lesson_events (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    duration_ms INTEGER,
+    final_slide SMALLINT,
+    total_slides SMALLINT,
+    state JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_state_snapshots_session ON state_snapshots(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_replay_buffer_session ON replay_buffer(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preference_log_session ON preference_log(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lesson_events_session ON lesson_events(session_id, created_at DESC);

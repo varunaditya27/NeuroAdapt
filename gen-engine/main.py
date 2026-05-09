@@ -63,6 +63,7 @@ from typing import Any, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
 import requests
 from orchestration.llm_provider import verify_llm_provider
@@ -177,6 +178,11 @@ app = FastAPI(
     description="Generative Synthesis Engine for neurodivergent content adaptation",
     lifespan=lifespan,
 )
+
+# Serve cached media assets (audio/video/images) for the frontend.
+_CACHE_ROOT = (Path(__file__).parent / "cache").resolve()
+_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=_CACHE_ROOT), name="media")
 
 # Global state (Phase 0: minimal)
 app_state: dict[str, Any] = {

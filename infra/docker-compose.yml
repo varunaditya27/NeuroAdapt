@@ -101,6 +101,7 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      GEN_ENGINE_PUBLIC_URL: ${GEN_ENGINE_PUBLIC_URL:-http://localhost:8001}
     # Bind mounts so logs/cache are directly tail-able from the host
     volumes:
       - ../gen-engine/logs:/home/app/logs
@@ -204,8 +205,8 @@ services:
 
   quantum:
     build:
-      context: ../quantum
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: quantum/Dockerfile
     # Opt-in only: docker compose ... --profile quantum up quantum
     profiles: ["quantum"]
     # Batch job — do not respawn after training completes
