@@ -8,18 +8,17 @@ from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
 
-#from generators.analogy_engine import generate_analogies
-#from generators.chunk_renderer import chunk_text
-#from generators.image_gen import generate_image
+from generators.analogy_engine import generate_analogies
+from generators.chunk_renderer import chunk_text
+from generators.image_gen import generate_image
 from generators.kokoro_tts import generate_tts
-#from generators.liveportrait_avatar import generate_avatar_video
+from generators.liveportrait_avatar import generate_avatar_video
 from generators.manim_gen import generate_manim_animation
 from generators.quiz_injector import generate_quiz
 from generators.text_simplify import simplify_text
-from models.request_schemas import GenerateRequest, PrefetchRequest
+from models.request_schemas import GenerateRequest
 from orchestration.hyperfocus_gate import check_hyperfocus
 from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_with_timeout
-from orchestration.prefetch_manager import prefetch_manager
 from utils.av_sync import generate_webvtt_metadata
 
 logger = logging.getLogger(__name__)
@@ -350,14 +349,6 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
         "warning": f"Unsupported action_id={action_id}; served original content.",
     }
 
-
-def _prefetch_generator(action_id: int, request_data: dict[str, Any]) -> dict[str, Any]:
-    return _generate_payload_for_action(action_id, request_data)
-
-
-prefetch_manager.set_generator(_prefetch_generator)
-
-
 def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     """Main request router called by API endpoint."""
     request_data = request.model_dump(mode="json")
@@ -389,28 +380,8 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
             "no_content": True,
         }
 
-    prefetch_wait_seconds = max(0.0, _get_env_float("PREFETCH_WAIT_SECONDS", 0.8))
-    if request.action_id == 3:
-        prefetch_wait_seconds = max(
-            prefetch_wait_seconds,
-            _get_env_float("PREFETCH_WAIT_SECONDS_ACTION3", 4.0),
-        )
-    elif request.action_id == 4:
-        prefetch_wait_seconds = max(
-            prefetch_wait_seconds,
-            _get_env_float("PREFETCH_WAIT_SECONDS_ACTION4", 1.2),
-        )
-
-    cached, cache_hit = prefetch_manager.get_cached_or_wait(
-        request.action_id,
-        request_data,
-        timeout=prefetch_wait_seconds,
-    )
-    if cache_hit and cached is not None:
-        payload = dict(cached)
-    else:
-        payload = _generate_payload_for_action(request.action_id, request_data)
-        cache_hit = bool(payload.get("cache_hit", False))
+    payload = _generate_payload_for_action(request.action_id, request_data)
+    cache_hit = bool(payload.get("cache_hit", False))
 
     # Ensure text actions always include chunks
     if request.action_id in {1, 2}:
@@ -419,13 +390,6 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
             payload["chunks"] = chunk_text(str(text_value), chunk_strategy="sentence").get(
                 "chunks", []
             )
-
-    # Typography morph for all non-hold responses.
-    prev_css = _LAST_CSS_BY_SESSION.get(session_id)
-    css = morph_typography(state_vector, locked_css=prev_css)
-    _LAST_CSS_BY_SESSION[session_id] = css
-    _prune_css_session_cache()
-    payload["css_variables"] = css
 
     return {
         "action_id": request.action_id,
@@ -436,51 +400,4 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
         "hyperfocus_override": False,
         "hyperfocus_composite": composite,
         "no_content": False,
-    }
-
-
-def start_prefetch(prefetch_request: PrefetchRequest) -> Dict[str, Any]:
-    request_data = {
-        "session_id": str(prefetch_request.session_id),
-        "slide_content": prefetch_request.slide_content,
-        "learner_level": prefetch_request.learner_level.value,
-        "content_type": None,
-        "concept": None,
-    }
-    queued = prefetch_manager.start_prefetch(prefetch_request.top_actions, request_data)
-
-    estimated_ms = 0
-    for action_id in prefetch_request.top_actions[:2]:
-        if action_id == 3:
-            estimated_ms = max(estimated_ms, int(get_timeout_seconds("manim") * 1000))
-        elif action_id == 2:
-            estimated_ms = max(estimated_ms, int(get_timeout_seconds("text_simplify") * 1000))
-        elif action_id == 4:
-            estimated_ms = max(estimated_ms, int(get_timeout_seconds("quiz") * 1000))
-
-    return {
-        "prefetch_started": queued > 0,
-        "tasks_queued": queued,
-        "estimated_completion_ms": estimated_ms or 2000,
-    }
-
-
-def get_prefetch_status(
-    action_id: int,
-    session_id: str,
-    slide_content: str,
-    content_type: str | None = None,
-    learner_level: str | None = None,
-) -> Dict[str, Any]:
-    request_data = {
-        "session_id": session_id,
-        "slide_content": slide_content,
-        "content_type": content_type,
-        "learner_level": learner_level,
-    }
-    status = prefetch_manager.get_status(action_id, request_data)
-    return {
-        **status,
-        "action_id": action_id,
-        "session_id": session_id,
     }

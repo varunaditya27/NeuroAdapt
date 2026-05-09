@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from models.request_schemas import GenerateRequest
 from models.response_schemas import ContentPayload, GenerateResponse
-from orchestration.action_router import get_prefetch_status, route_and_generate, start_prefetch
+from orchestration.action_router import route_and_generate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -32,17 +32,3 @@ async def health_check() -> dict[str, str]:
 @router.get("/api/health")
 async def health_check_api() -> dict[str, str]:
     return await _health_payload()
-
-
-@router.get("/metrics")
-async def metrics() -> Response:
-    payload = await _health_payload()
-    lines = [
-        "# HELP neuroadapt_backend_up Backend process health.",
-        "# TYPE neuroadapt_backend_up gauge",
-        "neuroadapt_backend_up 1",
-        "# HELP neuroadapt_backend_state_cache_entries In-memory state cache entries.",
-        "# TYPE neuroadapt_backend_state_cache_entries gauge",
-        f"neuroadapt_backend_state_cache_entries {payload['state_cache_entries']}",
-    ]
-    return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
