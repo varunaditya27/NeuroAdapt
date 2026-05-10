@@ -6,6 +6,7 @@ import PreferenceDelta from '@/components/PreferenceDelta';
 import StudyModeConfirmation from '@/components/StudyModeConfirmation';
 import QuizRenderer from '@/components/QuizRenderer';
 import VideoRenderer from '@/components/VideoRenderer';
+import Loader from '@/components/Loader';
 import {
   init as initObserver,
   destroy as destroyObserver,
@@ -41,6 +42,7 @@ export default function Home() {
   const [modelSuggestedMode, setModelSuggestedMode] = useState(null); // Latest model suggestion
   const [adaptiveContent, setAdaptiveContent] = useState(null);
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+  const [adaptiveLoadingActionId, setAdaptiveLoadingActionId] = useState(null); // Track which action is being generated
   const [adaptiveError, setAdaptiveError] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const [lessonDuration, setLessonDuration] = useState(0);
@@ -359,6 +361,7 @@ export default function Home() {
 
     const runAdaptiveCycle = async () => {
       setAdaptiveLoading(true);
+      setAdaptiveLoadingActionId(null);
       setAdaptiveError(null);
 
       try {
@@ -378,8 +381,12 @@ export default function Home() {
 
         if (action.gated || action.action_id === 0) {
           setAdaptiveContent(null);
+          setAdaptiveLoading(false);
           return;
         }
+
+        // Track which action is being generated for contextual loading message
+        setAdaptiveLoadingActionId(action.action_id);
 
         const generateResponse = await fetch('/api/generate', {
           method: 'POST',
@@ -1196,7 +1203,7 @@ export default function Home() {
               </p>
 
               {adaptiveLoading && (
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Adapting this slide…</p>
+                <Loader actionId={adaptiveLoadingActionId} />
               )}
               {adaptiveError && (
                 <p style={{ color: '#B91C1C', fontSize: '14px' }}>{adaptiveError}</p>
