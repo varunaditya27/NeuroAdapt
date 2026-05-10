@@ -148,3 +148,37 @@ class GenerateRequest(BaseModel):
             }
         }
     )
+
+
+class PrefetchRequest(BaseModel):
+    """Request for prefetch/preload of multiple content generations."""
+
+    session_id: str | None = Field(default=None, min_length=1)
+    slide_content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Content context for prefetch decisions",
+    )
+    learner_level: LearnerLevel = Field(..., description="Target reading/complexity level")
+    top_actions: list[int] = Field(
+        default_factory=list,
+        description="Action IDs to prefetch (0-5, ordered by priority)",
+    )
+    state_vector: dict[str, Any] | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    content_type: str | None = None
+    concept: str | None = None
+    learner_id: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "session_id": "sess_123",
+                "slide_content": "Photosynthesis mechanism",
+                "learner_level": "grade8",
+                "top_actions": [2, 3, 1],
+            }
+        }
+    )
