@@ -18,6 +18,7 @@ import {
 } from '@/components/Observer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
+import { STUDY_MODES } from '@/utils/constants';
 import {
   actionIdToStudyMode,
   computeStudyModePrefDelta,
@@ -34,6 +35,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
   const [showStudyModeRecommendation, setShowStudyModeRecommendation] = useState(false);
+  const [isLessonCompletionMode, setIsLessonCompletionMode] = useState(false); // Track if modal opened from lesson completion
   const [selectedFormat, setSelectedFormat] = useState('text');
   const [currentStudyMode, setCurrentStudyMode] = useState('text'); // Active study mode
   const [modelSuggestedMode, setModelSuggestedMode] = useState(null); // Latest model suggestion
@@ -44,6 +46,7 @@ export default function Home() {
   const [lessonDuration, setLessonDuration] = useState(0);
   const sessionIdRef = useRef(null);
   const lessonStartTimeRef = useRef(null);
+  const currentLessonTopicRef = useRef(null); // Track which lesson is active to detect topic changes
 
   // Initialize Observer on mount
   useEffect(() => {
@@ -70,11 +73,6 @@ export default function Home() {
   // Track lesson start/end for telemetry
   useEffect(() => {
     if (view === 'lesson' && selectedTopic) {
-      // Starting a lesson - reset study mode state for fresh recommendation
-      setCurrentStudyMode('text'); // Reset to default
-      setModelSuggestedMode(null);
-      setShowStudyModeRecommendation(false);
-      
       startLesson({
         subject: selectedSubjectId,
         topic: selectedTopic.topicId,
@@ -89,10 +87,11 @@ export default function Home() {
         current_slide: currentSlideIndex,
         total_slides: currentSlides.length,
       });
+      currentLessonTopicRef.current = null;
       lessonStartTimeRef.current = null;
       console.log('[Home] Lesson ended via navigation');
     }
-  }, [view, selectedTopic, selectedSubjectId]);
+  }, [view, selectedTopic, selectedSubjectId, currentSlideIndex]);
 
   const selectedSubject = selectedSubjectId
     ? LESSON_CATALOGUE.find((s) => s.subjectId === selectedSubjectId)
@@ -166,6 +165,9 @@ export default function Home() {
     } catch (err) {
       console.warn('[Home] Failed to pre-fetch next action:', err);
     }
+    
+    // Mark that modal is being opened from lesson completion
+    setIsLessonCompletionMode(true);
     
     // Fetch and show study mode recommendation if applicable
     await fetchAndShowRecommendation();
@@ -322,18 +324,25 @@ export default function Home() {
 
   /**
    * Handle study mode confirmation modal close
-   * Cleans up state and navigates back to topics after lesson completion
+   * Cleans up state and navigates back to topics ONLY if lesson was completed
+   * If mode was changed mid-lesson, stay in the lesson
    */
   const handleStudyModeModalClose = () => {
     setShowStudyModeRecommendation(false);
     setModelSuggestedMode(null);
     
-    // Navigate back to topics after modal closes
-    setView('topics');
-    setSelectedTopic(null);
-    setCurrentSlideIndex(0);
+    // Only navigate back if this modal was opened from lesson completion
+    if (isLessonCompletionMode) {
+      setView('topics');
+      setSelectedTopic(null);
+      setCurrentSlideIndex(0);
+      console.log('[Home] Study mode confirmation closed after lesson completion, navigating back to topics');
+    } else {
+      console.log('[Home] Study mode changed mid-lesson, staying in lesson view');
+    }
     
-    console.log('[Home] Study mode confirmation closed, navigating back to topics');
+    // Reset the flag
+    setIsLessonCompletionMode(false);
   };
 
   const progress = selectedTopic
@@ -788,7 +797,7 @@ export default function Home() {
               textAlign: 'center',
             }}
           >
-            {currentStudyMode}
+            {STUDY_MODES[currentStudyMode]?.label || currentStudyMode}
           </div>
         </div>
       </aside>
