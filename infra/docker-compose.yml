@@ -96,6 +96,7 @@ services:
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       KOKORO_TTS_URL: http://kokoro-tts:8880
       TTS_URL: http://kokoro-tts:8880
+      LATENCY_BUDGET_AUDIO: 30
       DATABASE_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
       POSTGRES_URL: ${GEN_ENGINE_DATABASE_URL:-postgresql://neuroadapt:neuroadapt_dev_password@postgres:5432/neuroadapt}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}

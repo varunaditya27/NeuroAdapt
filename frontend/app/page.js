@@ -458,10 +458,18 @@ export default function Home() {
   };
 
   const renderAdaptiveContent = () => {
-    if (!adaptiveContent?.content) return null;
+    if (!adaptiveContent) return null;
 
+    // Extract action_id and content from response
     const { action_id: actionId, content } = adaptiveContent;
-    if (actionId === 4 && Array.isArray(content.quiz_json)) {
+    
+    if (!content) {
+      console.warn('[Home] adaptiveContent missing content field:', adaptiveContent);
+      return null;
+    }
+
+    // Action 4: Quiz
+    if (actionId === 4 && Array.isArray(content.quiz_json) && content.quiz_json.length > 0) {
       const mappedQuiz = {
         title: content.title || 'Quick Check',
         questions: content.quiz_json.map((question, idx) => ({
@@ -485,44 +493,67 @@ export default function Home() {
       );
     }
 
+    // Action 5: Sensory Break
     if (actionId === 5) {
       return (
         <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--teal)', borderRadius: '8px' }}>
           <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '12px' }}>{content.title || 'Sensory Reset'}</h2>
-          <p style={{ lineHeight: 1.7 }}>{content.break_template}</p>
+          <p style={{ lineHeight: 1.7 }}>{content.break_template || 'Take a moment to reset and breathe.'}</p>
         </div>
       );
     }
 
-    if (content.video_url || content.image_url || content.audio_url) {
+    // Video + Audio + Text (Actions 1, 3)
+    if (content.video_url) {
+      console.log('[Home] Rendering video with metadata:', { video: content.video_url, vtt: content.metadata_vtt });
       return (
         <div style={{ marginTop: '32px' }}>
-          {content.video_url && (
-            <VideoRenderer
-              content={{
-                src: content.video_url,
-                title: content.title || 'Adaptive Video',
-                captionsUrl: content.metadata_vtt || '',
-                transcript: content.simplified_text || content.original_text || '',
-              }}
-            />
+          <VideoRenderer
+            content={{
+              src: content.video_url,
+              title: content.title || 'Adaptive Video',
+              captionsUrl: content.metadata_vtt || '',
+              transcript: content.simplified_text || '',
+            }}
+          />
+          {content.simplified_text && (
+            <p style={{ marginTop: '24px', padding: '16px', lineHeight: 1.7, backgroundColor: 'rgba(0, 150, 136, 0.05)', borderRadius: '8px' }}>
+              {content.simplified_text}
+            </p>
           )}
-          {content.image_url && <img src={content.image_url} alt="Generated lesson visual" style={{ width: '100%', borderRadius: '8px' }} />}
-          {content.audio_url && <audio src={content.audio_url} controls style={{ width: '100%', marginTop: '12px' }} />}
-          {content.simplified_text && <p style={{ marginTop: '16px', lineHeight: 1.7 }}>{content.simplified_text}</p>}
         </div>
       );
     }
 
+    // Image alone (fallback)
+    if (content.image_url) {
+      return (
+        <div style={{ marginTop: '32px' }}>
+          <img src={content.image_url} alt="Generated lesson visual" style={{ width: '100%', borderRadius: '8px', marginBottom: '16px' }} />
+          {content.simplified_text && (
+            <p style={{ marginTop: '12px', lineHeight: 1.7 }}>{content.simplified_text}</p>
+          )}
+        </div>
+      );
+    }
+
+    // Text simplification (Action 2)
     if (content.simplified_text) {
       return (
-        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px' }}>
-          <h2 style={{ color: 'var(--navy)', fontSize: '20px', marginBottom: '12px' }}>Adapted Version</h2>
-          <p style={{ lineHeight: 1.7 }}>{content.simplified_text}</p>
+        <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'rgba(0, 150, 136, 0.05)' }}>
+          <h2 style={{ color: 'var(--navy)', fontSize: '18px', marginBottom: '12px' }}>📖 Simplified Version</h2>
+          <p style={{ lineHeight: 1.7, color: 'var(--text)' }}>{content.simplified_text}</p>
+          {content.fk_grade !== undefined && (
+            <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--muted)' }}>
+              Reading level: Grade {Math.round(content.fk_grade * 10) / 10}
+            </p>
+          )}
         </div>
       );
     }
 
+    // No renderable content
+    console.warn('[Home] No renderable content in adaptive response:', content);
     return null;
   };
 
