@@ -13,7 +13,7 @@ export default function AudioRenderer({
 }) {
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  const src = content.src || '';
+  const src = content.audio_url || content.src || '';
   const transcript = content.transcript || '';
   const title = content.title || '';
 

@@ -11,11 +11,11 @@ export default function VideoRenderer({
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
 
-  const src = content.src || '';
+  const src = content.video_url || content.src || '';
   const poster = content.poster || '';
   const transcript = content.transcript || '';
   const title = content.title || '';
-  const captionsUrl = content.captionsUrl || '';
+  const captionsUrl = content.metadata_vtt || content.captionsUrl || '';
 
   if (!src) {
     return (

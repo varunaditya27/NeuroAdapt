@@ -6,6 +6,7 @@ import PreferenceDelta from '@/components/PreferenceDelta';
 import StudyModeConfirmation from '@/components/StudyModeConfirmation';
 import QuizRenderer from '@/components/QuizRenderer';
 import VideoRenderer from '@/components/VideoRenderer';
+import SensoryBreak from '@/components/SensoryBreak';
 import Loader from '@/components/Loader';
 import {
   init as initObserver,
@@ -40,6 +41,7 @@ export default function Home() {
   const [selectedFormat, setSelectedFormat] = useState('text');
   const [currentStudyMode, setCurrentStudyMode] = useState('text'); // Active study mode
   const [modelSuggestedMode, setModelSuggestedMode] = useState(null); // Latest model suggestion
+  const [showSensoryBreak, setShowSensoryBreak] = useState(false); // Sensory break overlay active
   const [adaptiveContent, setAdaptiveContent] = useState(null);
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
   const [adaptiveLoadingActionId, setAdaptiveLoadingActionId] = useState(null); // Track which action is being generated
@@ -432,6 +434,13 @@ export default function Home() {
     };
   }, [view, currentSlideIndex, currentSlide]);
 
+  // Handle sensory break trigger when action_id = 5
+  useEffect(() => {
+    if (adaptiveContent?.action_id === 5 && !showSensoryBreak) {
+      setShowSensoryBreak(true);
+    }
+  }, [adaptiveContent, showSensoryBreak]);
+
   const postFeedback = async (event, chosenFormat = null) => {
     if (!sessionIdRef.current) return;
 
@@ -509,7 +518,7 @@ export default function Home() {
       );
     }
 
-    // Action 5: Sensory Break
+    // Action 5: Sensory Break - show full-screen overlay
     if (actionId === 5) {
       return (
         <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--teal)', borderRadius: '8px' }}>
@@ -536,6 +545,37 @@ export default function Home() {
             <p style={{ marginTop: '24px', padding: '16px', lineHeight: 1.7, backgroundColor: 'rgba(0, 150, 136, 0.05)', borderRadius: '8px' }}>
               {content.simplified_text}
             </p>
+          )}
+        </div>
+      );
+    }
+
+    // Audio (Action 3 - audio variant)
+    if (content.audio_url) {
+      console.log('[Home] Rendering audio:', { audio: content.audio_url });
+      return (
+        <div style={{ marginTop: '32px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px' }}>
+            {content.title && (
+              <h2 style={{ color: 'var(--navy)', fontSize: '18px', marginBottom: '12px' }}>
+                🎵 {content.title}
+              </h2>
+            )}
+            <audio
+              controls
+              style={{
+                width: '100%',
+                marginBottom: content.transcript ? '16px' : '0',
+              }}
+            >
+              <source src={content.audio_url} type="audio/mpeg" />
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+          {content.transcript && (
+            <div style={{ padding: '16px', backgroundColor: 'rgba(0, 150, 136, 0.05)', borderRadius: 'var(--radius)', lineHeight: 1.7 }}>
+              {content.transcript}
+            </div>
           )}
         </div>
       );
@@ -1442,6 +1482,24 @@ export default function Home() {
         onSelect={handleFormatSelect}
         onClose={() => setShowPreferenceDelta(false)}
       />
+
+      {/* Sensory Break Overlay */}
+      {showSensoryBreak && (
+        <SensoryBreak
+          duration={adaptiveContent?.content?.suggested_duration_seconds || 60}
+          onBreakStart={() => {
+            console.log('[Home] Sensory break started');
+            postFeedback('sensory_break_start');
+          }}
+          onBreakEnd={() => {
+            console.log('[Home] Sensory break ended');
+            setShowSensoryBreak(false);
+            postFeedback('sensory_break_complete');
+            // Resume adaptive cycle
+            setAdaptiveContent(null);
+          }}
+        />
+      )}
 
       {/* EnergyBar */}
       <EnergyBar
