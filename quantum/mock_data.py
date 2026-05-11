@@ -92,9 +92,9 @@ REWARD_WEIGHTS: dict[str, float] = {
     "answer_correct":  0.5,
     "format_choice":   0.2,
     "energy_bar":     -5.0,
-    "stability_bonus": 0.7,
-    "tab_switch":     -1.0,
-    "overload":       -2.0,
+    "stability_bonus": 1.0,
+    "tab_switch_penalty": -1.0,
+    "overload_penalty": -4.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -309,11 +309,11 @@ def compute_signal_reward(
     # Overload: high stall AND high jitter simultaneously
     # Corresponds to ADHD paralysis state (Neuroperforma, 2026)
     if stall > 0.70 and jitter > 0.70:
-        reward += REWARD_WEIGHTS["overload"]
+        reward += REWARD_WEIGHTS["overload_penalty"]
 
     # Tab switching: low focus
     if focus < 0.10:
-        reward += REWARD_WEIGHTS["tab_switch"]
+        reward += REWARD_WEIGHTS["tab_switch_penalty"]
 
     # Stability bonus: intervention worked — signals calming down
     # next_state both less stressed than current

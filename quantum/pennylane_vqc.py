@@ -80,12 +80,12 @@ if qml is not None:
             self.bn = self.norm
             
             self.bottleneck = nn.Sequential(
-                nn.Linear(5, 16),
+                nn.Linear(5, 64),
                 nn.ReLU()
             )
             
-            self.advantage = nn.Linear(16, n_actions)
-            self.value = nn.Linear(16, 1)
+            self.advantage = nn.Linear(64, n_actions)
+            self.value = nn.Linear(64, 1)
 
             with torch.no_grad():
                 for name, param in self.quantum_layer.named_parameters():
@@ -93,7 +93,7 @@ if qml is not None:
                         nn.init.uniform_(param, a=0.1, b=0.5)
                     else:
                         # Start broad so the circuit is not trapped in near-identity behavior.
-                        nn.init.normal_(param, mean=0.0, std=0.01)
+                        nn.init.uniform_(param, a=-0.1, b=0.1)
 
                 nn.init.xavier_uniform_(self.bottleneck[0].weight)
                 nn.init.constant_(self.bottleneck[0].bias, 0.1)
@@ -104,7 +104,7 @@ if qml is not None:
                 nn.init.zeros_(self.value.bias)
 
         def forward(self, state: torch.Tensor) -> torch.Tensor:
-            state = (state - 0.5) * 2.0
+            state = state * 3.14159
             q_out = self.quantum_layer(state)
             q_out = q_out * self.output_scale
             q_out = self.norm(q_out)

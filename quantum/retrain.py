@@ -175,7 +175,7 @@ def run_retrain(
     wandb = None
     if enable_wandb:
         try:
-            import wandb as wb
+            import wandb as wb  # type: ignore
             wb.init(project=wandb_project, config={"model_type": model_type, "episodes": episodes})
             wandb = wb
         except Exception:
