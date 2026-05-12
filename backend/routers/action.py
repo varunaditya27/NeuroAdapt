@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from backend.shared_config import ACTION_NAMES, ACTION_SPACE, CONFIDENCE_GATE, S
 from backend.services.state_store import fetch_latest_state, get_cached_state
 
 router = APIRouter(prefix="/api", tags=["action"])
+logger = logging.getLogger(__name__)
 
 _model = None
 _model_load_attempted = False
@@ -105,8 +107,11 @@ def _infer_q_values(vector: list[float]) -> list[float]:
 @router.get("/action", response_model=ActionResponse)
 async def get_action(
     session_id: str = Query(..., min_length=1),
+    study_mode: str | None = Query(default=None, min_length=1),
     db: AsyncSession = Depends(get_db),
 ) -> ActionResponse:
+    if study_mode:
+        logger.info("Action request study_mode=%s session=%s", study_mode, session_id)
     vector = get_cached_state(session_id)
     if vector is None:
         try:

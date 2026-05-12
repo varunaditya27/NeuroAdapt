@@ -9,6 +9,7 @@ from typing import Any, Dict
 from uuid import uuid4
 
 from generators.analogy_engine import generate_analogies
+from generators.audio_narration import generate_audio_narration
 from generators.chunk_renderer import chunk_text
 from generators.image_gen import generate_image
 from generators.kokoro_tts import generate_tts
@@ -131,6 +132,7 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
     session_id = _safe_session_id(request_data)
     concept = str(request_data.get("concept") or "").strip() or slide_content[:80]
     state_vector = request_data.get("state_vector") or {}
+    study_mode = str(request_data.get("study_mode") or "").strip().lower()
 
     if action_id == 1:
         chunked = chunk_text(slide_content, chunk_strategy="sentence")
@@ -192,22 +194,42 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
         return result
 
     if action_id == 3:
-        content_type = _resolved_content_type(request_data)
-
-        if content_type == "audio":
+        if study_mode == "audio":
             res, timed_out, _, error = run_with_timeout(
-                generate_tts,
+                generate_audio_narration,
                 get_timeout_seconds("audio"),
                 slide_content,
+                learner_level,
                 request_data.get("voice_profile"),
-                0.85,
                 request_data.get("learner_id"),
                 session_id,
             )
             if timed_out:
                 return fallback_for("audio", original_text=slide_content)
             if error:
-                return {"warning": f"Audio generation failed: {error}"}
+                payload = fallback_for("audio", original_text=slide_content)
+                payload["warning"] = f"Audio narration failed: {error}"
+                return payload
+            return res
+
+        content_type = _resolved_content_type(request_data)
+
+        if content_type == "audio":
+            res, timed_out, _, error = run_with_timeout(
+                generate_audio_narration,
+                get_timeout_seconds("audio"),
+                slide_content,
+                learner_level,
+                request_data.get("voice_profile"),
+                request_data.get("learner_id"),
+                session_id,
+            )
+            if timed_out:
+                return fallback_for("audio", original_text=slide_content)
+            if error:
+                payload = fallback_for("audio", original_text=slide_content)
+                payload["warning"] = f"Audio generation failed: {error}"
+                return payload
             return res
 
         if content_type == "avatar":
@@ -391,6 +413,7 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     request_data["confidence"] = request_data.get("confidence") or 0.5
     request_data["concept"] = request_data.get("concept")
     request_data["content_type"] = request_data.get("content_type")
+    request_data["study_mode"] = request_data.get("study_mode")
     request_data["learner_id"] = request_data.get("learner_id")
     request_data["voice_profile"] = request_data.get("voice_profile")
     request_data["source_image"] = request_data.get("source_image")
