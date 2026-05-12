@@ -18,6 +18,7 @@ import {
   endLesson,
   updateLessonMetadata,
 } from '@/components/Observer';
+import AudioRenderer from '@/components/AudioRenderer';
 import { LESSON_CATALOGUE } from '@/data/lessonCatalogue';
 import { computePreferenceDelta } from '@/utils/preferenceDeltaCalculator';
 import { STUDY_MODES } from '@/utils/constants';
@@ -158,7 +159,7 @@ export default function Home() {
     // Pre-fetch the model's recommended next action
     try {
       const res = await fetch(
-        `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}`,
+        `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}&study_mode=${encodeURIComponent(currentStudyMode)}`,
         { cache: 'no-store' }
       );
       if (res.ok) {
@@ -370,7 +371,7 @@ export default function Home() {
         await flushObserver();
 
         const actionResponse = await fetch(
-          `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}`,
+          `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}&study_mode=${encodeURIComponent(currentStudyMode)}`,
           { cache: 'no-store' }
         );
         if (!actionResponse.ok) {
@@ -399,6 +400,7 @@ export default function Home() {
             learner_level: 'grade8',
             session_id: sessionIdRef.current,
             confidence: action.confidence,
+            study_mode: currentStudyMode,
           }),
         });
 
@@ -555,28 +557,14 @@ export default function Home() {
       console.log('[Home] Rendering audio:', { audio: content.audio_url });
       return (
         <div style={{ marginTop: '32px' }}>
-          <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px', marginBottom: '24px' }}>
-            {content.title && (
-              <h2 style={{ color: 'var(--navy)', fontSize: '18px', marginBottom: '12px' }}>
-                🎵 {content.title}
-              </h2>
-            )}
-            <audio
-              controls
-              style={{
-                width: '100%',
-                marginBottom: content.transcript ? '16px' : '0',
-              }}
-            >
-              <source src={content.audio_url} type="audio/mpeg" />
-              Your browser does not support the audio element.
-            </audio>
-          </div>
-          {content.transcript && (
-            <div style={{ padding: '16px', backgroundColor: 'rgba(0, 150, 136, 0.05)', borderRadius: 'var(--radius)', lineHeight: 1.7 }}>
-              {content.transcript}
-            </div>
-          )}
+          <AudioRenderer
+            content={{
+              audio_url: content.audio_url,
+              src: content.audio_url,
+              transcript: content.transcript || '',
+              title: content.title || '🎵 Narrated Explanation',
+            }}
+          />
         </div>
       );
     }
