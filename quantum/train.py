@@ -125,25 +125,23 @@ def load_dataset_transitions(data_dir: str | Path, n_actions: int = N_ACTIONS) -
 def evaluate_policy_pref_delta(
     net,
     transitions: list[Transition],
-    sample_count: int = 32,
+    sample_count: int = 64,
     n_actions: int = N_ACTIONS,
 ) -> float:
-    pref_deltas: list[float] = []
-
     if not transitions:
         return 0.0
 
     eval_batch = transitions[: min(sample_count, len(transitions))]
+    hits = 0
 
     with torch.no_grad():
         for state, expected_action, _, _, _ in eval_batch:
-
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
             predicted_action = int(net(state_tensor).argmax(dim=1).item())
-            pref_delta = abs(predicted_action - expected_action) / (n_actions - 1)
-            pref_deltas.append(pref_delta)
+            if predicted_action == expected_action:
+                hits += 1
 
-    return sum(pref_deltas) / float(len(pref_deltas))
+    return 1.0 - (hits / len(eval_batch))
 
 
 def evaluate_policy_action_entropy(
