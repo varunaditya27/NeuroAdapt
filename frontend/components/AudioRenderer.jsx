@@ -33,9 +33,8 @@ export default function AudioRenderer({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100vh',
-        paddingTop: '56px',
-        padding: '40px 20px',
+        paddingTop: '16px',
+        padding: '20px',
         maxWidth: '900px',
         marginLeft: 'auto',
         marginRight: 'auto',

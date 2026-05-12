@@ -12,7 +12,7 @@ export default function Loader({ actionId = null, message = null }) {
     const messageMap = {
       1: '🔤 Generating simplified text...',
       2: '📖 Generating simplified text...',
-      3: '🎬 Generating video...',
+      3: '� Generating narrated content...',
       4: '❓ Creating quiz...',
       5: '🌬️ Preparing sensory break...',
     };
