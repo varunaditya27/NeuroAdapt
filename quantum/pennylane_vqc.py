@@ -17,7 +17,7 @@ except ModuleNotFoundError:
     from backend.shared_config import N_ACTIONS, N_QUBITS
 
 try:
-    import pennylane as qml
+    import pennylane as qml # type: ignore
 except Exception:  # pragma: no cover
     qml = None
 
@@ -73,11 +73,7 @@ if qml is not None:
             }
             
             self.quantum_layer = qml.qnn.TorchLayer(vqc, weight_shapes)
-            self.output_scale = nn.Parameter(torch.ones(1))
-
-            # Output from VQC is 5 measurements
-            self.norm = nn.LayerNorm(5)
-            self.bn = self.norm
+            # Output from VQC is 5 raw measurements
             
             self.bottleneck = nn.Sequential(
                 nn.Linear(5, 64),
@@ -106,8 +102,6 @@ if qml is not None:
         def forward(self, state: torch.Tensor) -> torch.Tensor:
             state = state * 3.14159
             q_out = self.quantum_layer(state)
-            q_out = q_out * self.output_scale
-            q_out = self.norm(q_out)
             
             bottleneck_out = self.bottleneck(q_out)
                 
