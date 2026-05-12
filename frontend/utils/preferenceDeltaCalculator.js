@@ -65,11 +65,16 @@ export function calculatePreferenceDelta(predictedFormat, userSelectedFormat) {
  * @param {string} sessionId - Current session ID
  * @returns {Promise<number|null>} - Action ID from model or null
  */
-export async function fetchModelPredictedAction(sessionId) {
+export async function fetchModelPredictedAction(sessionId, studyMode = null) {
   try {
     console.log('[PreferenceDelta] Fetching model action for session:', sessionId);
-    
-    const response = await fetch(`/api/action?session_id=${encodeURIComponent(sessionId)}`, {
+
+    const params = new URLSearchParams({ session_id: sessionId });
+    if (studyMode) {
+      params.set('study_mode', studyMode);
+    }
+
+    const response = await fetch(`/api/action?${params.toString()}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -111,17 +116,23 @@ export async function fetchModelPredictedAction(sessionId) {
  * @param {string} currentFormat - Currently active format (for fallback comparison)
  * @returns {Promise<number>} - Calculated preference delta
  */
-export async function computePreferenceDelta(sessionId, userSelectedFormat, currentFormat) {
+export async function computePreferenceDelta(
+  sessionId,
+  userSelectedFormat,
+  currentFormat,
+  studyMode = null
+) {
   try {
     console.log('[PreferenceDelta] Starting computation:', {
       sessionId,
       userSelectedFormat,
       currentFormat,
+      studyMode,
       timestamp: new Date().toLocaleTimeString(),
     });
 
     // Try to fetch model prediction
-    const actionId = await fetchModelPredictedAction(sessionId);
+    const actionId = await fetchModelPredictedAction(sessionId, studyMode);
     console.log('[PreferenceDelta] Got action ID:', actionId);
     
     let preferenceDelta;

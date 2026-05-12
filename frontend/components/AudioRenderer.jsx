@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import TextRenderer from './TextRenderer';
 import { splitIntoChunks } from '@/utils/splitIntoChunks';
 
@@ -12,10 +12,22 @@ export default function AudioRenderer({
   content = {},
 }) {
   const [playbackRate, setPlaybackRate] = useState(1);
+  const audioRef = useRef(null);
 
   const src = content.audio_url || content.src || '';
   const transcript = content.transcript || '';
   const title = content.title || '';
+  const audioType = src.endsWith('.wav')
+    ? 'audio/wav'
+    : src.endsWith('.mp3')
+      ? 'audio/mpeg'
+      : undefined;
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
 
   if (!src) {
     return (
@@ -64,13 +76,19 @@ export default function AudioRenderer({
         }}
       >
         <audio
+          ref={audioRef}
           controls
+          onLoadedMetadata={() => {
+            if (audioRef.current) {
+              audioRef.current.playbackRate = playbackRate;
+            }
+          }}
           style={{
             width: '100%',
             marginBottom: '12px',
           }}
         >
-          <source src={src} type="audio/mpeg" />
+          <source src={src} type={audioType} />
           Your browser does not support the audio element.
         </audio>
 

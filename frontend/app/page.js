@@ -208,7 +208,8 @@ export default function Home() {
       const dynamicPreferenceDelta = await computePreferenceDelta(
         sessionIdRef.current,
         format,
-        selectedFormat // current format before update
+        selectedFormat, // current format before update
+        currentStudyMode
       );
 
       // Update Observer with the calculated preference delta
@@ -299,7 +300,10 @@ export default function Home() {
       console.log('[Home] Fetching study mode recommendation for session:', sessionIdRef.current);
 
       // Fetch model's recommended study mode
-      const recommendedMode = await fetchModelStudyModeRecommendation(sessionIdRef.current);
+      const recommendedMode = await fetchModelStudyModeRecommendation(
+        sessionIdRef.current,
+        currentStudyMode
+      );
 
       console.log('[Home] Recommendation result:', {
         suggestedMode: recommendedMode,
@@ -434,7 +438,7 @@ export default function Home() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [view, currentSlideIndex, currentSlide]);
+  }, [view, currentSlideIndex, currentSlide, currentStudyMode]);
 
   // Handle sensory break trigger when action_id = 5
   useEffect(() => {
@@ -540,7 +544,7 @@ export default function Home() {
               src: content.video_url,
               title: content.title || 'Adaptive Video',
               captionsUrl: content.metadata_vtt || '',
-              transcript: content.simplified_text || '',
+              transcript: content.transcript || content.simplified_text || '',
             }}
           />
           {content.simplified_text && (

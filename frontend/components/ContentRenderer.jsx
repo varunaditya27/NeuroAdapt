@@ -17,6 +17,7 @@ export default function ContentRenderer({
   content = {},
   confidence = 1.0,
   sessionId = null,
+  studyMode = null,
   actionPollInterval = 5000,
   onBreakTrigger,
   onQuizComplete = () => {},
@@ -74,7 +75,11 @@ export default function ContentRenderer({
     const pollAction = async () => {
       setActionLoading(true);
       try {
-        const response = await fetch(`/api/action?session_id=${encodeURIComponent(sessionId)}`);
+        const params = new URLSearchParams({ session_id: sessionId });
+        if (studyMode) {
+          params.set('study_mode', studyMode);
+        }
+        const response = await fetch(`/api/action?${params.toString()}`);
         if (!response.ok) {
           throw new Error(`Action poll failed: ${response.status}`);
         }
@@ -102,7 +107,7 @@ export default function ContentRenderer({
     pollInterval = setInterval(pollAction, actionPollInterval);
 
     return () => clearInterval(pollInterval);
-  }, [sessionId, actionPollInterval, onActionReceived]);
+  }, [sessionId, studyMode, actionPollInterval, onActionReceived]);
 
   // Show thinking skeleton if confidence below gate
   if (confidence < confidenceGate) {
