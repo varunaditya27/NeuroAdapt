@@ -395,27 +395,38 @@ def mux_audio_into_video(
     video_duration = _probe_duration(video)
     audio_duration = _probe_duration(audio)
     tempo_ratio = audio_duration / video_duration if video_duration > 0 else 0.0
-    needs_tempo = tempo_ratio and abs(tempo_ratio - 1.0) >= 0.01
-    filter_chain = _atempo_filter(tempo_ratio) if needs_tempo else None
+    needs_video_stretch = tempo_ratio and tempo_ratio > 1.01
+    video_pts = f"setpts={tempo_ratio:.6f}*PTS" if needs_video_stretch else None
 
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-i",
-        str(video),
-        "-i",
-        str(audio),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-    ]
-    if filter_chain:
-        cmd.extend(["-filter:a", filter_chain])
+    cmd = [ffmpeg, "-y", "-i", str(video), "-i", str(audio)]
+
+    if video_pts:
+        cmd.extend([
+            "-filter_complex",
+            f"[0:v]{video_pts}[v]",
+            "-map",
+            "[v]",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-preset",
+            "veryfast",
+        ])
+    else:
+        cmd.extend([
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+        ])
+
     cmd.extend(["-shortest", str(output)])
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)

@@ -594,7 +594,11 @@ export default function Home() {
               src: content.video_url,
               title: content.title || 'Adaptive Video',
               captionsUrl: content.metadata_vtt || '',
-              transcript: content.transcript || content.simplified_text || '',
+              transcript:
+                content.transcript ||
+                content.narration?.script ||
+                content.simplified_text ||
+                '',
             }}
           />
           {content.audio_url && (
@@ -622,7 +626,11 @@ export default function Home() {
             content={{
               audio_url: content.audio_url,
               src: content.audio_url,
-              transcript: content.transcript || '',
+              transcript:
+                content.transcript ||
+                content.narration?.script ||
+                content.simplified_text ||
+                '',
               title: content.title || '🎵 Narrated Explanation',
             }}
           />
