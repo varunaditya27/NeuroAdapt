@@ -152,7 +152,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quantum-lr", type=float, default=1e-4)
     parser.add_argument("--classical-lr", type=float, default=1e-4)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=400)
-    parser.add_argument("--quantum-layer-lr", type=float, default=8e-4)
+    parser.add_argument("--quantum-layer-lr", type=float, default=1.2e-3)
     parser.add_argument("--quantum-head-lr", type=float, default=5e-5)
     parser.add_argument("--classical-hidden-dim", type=int, default=64)
     parser.add_argument("--reward-mode", choices=["dataset", "exp-distance"], default="exp-distance")

@@ -90,11 +90,11 @@ except Exception:
 REWARD_WEIGHTS: dict[str, float] = {
     "complete":        1.0,
     "answer_correct":  0.5,
-    "format_choice":   0.8,
+    "format_choice":   2.0,
     "energy_bar":     -5.0,
     "stability_bonus": 1.0,
     "tab_switch_penalty": -1.0,
-    "overload_penalty": -4.0,
+    "overload_penalty": -6.0,
 }
 
 # ---------------------------------------------------------------------------

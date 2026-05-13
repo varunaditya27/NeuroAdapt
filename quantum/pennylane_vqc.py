@@ -55,7 +55,7 @@ if qml is not None:
                     # RY encoding is more stable for real-plane tabular input
                     qml.RY(encoded_inputs[:, i] * PI * input_scales[L, i], wires=i)
             
-            qml.StronglyEntanglingLayers(weights[L:L+1], wires=range(N_QUBITS))
+            qml.BasicEntanglerLayers(weights[L:L+1], wires=range(N_QUBITS))
  
         # Standardized measurements + Entangling terms (7 outputs)
         return [qml.expval(qml.PauliZ(i)) for i in range(N_QUBITS)]
@@ -66,9 +66,9 @@ if qml is not None:
             # 5 layers for deeper feature extraction
             self.num_layers = 5
             self.data_reupload_layers = DATA_REUPLOAD_LAYERS
-            # Weights for StronglyEntanglingLayers are (layers, wires, 3)
+            # Weights for BasicEntanglerLayers are (layers, wires)
             weight_shapes = {
-                "weights": (self.num_layers, N_QUBITS, 3),
+                "weights": (self.num_layers, N_QUBITS),
                 "input_scales": (self.data_reupload_layers, N_QUBITS),
             }
             
@@ -92,7 +92,7 @@ if qml is not None:
                         nn.init.uniform_(param, a=-0.1, b=0.1)
 
                 nn.init.xavier_uniform_(self.bottleneck[0].weight)
-                nn.init.constant_(self.bottleneck[0].bias, 0.1)
+                nn.init.zeros_(self.bottleneck[0].bias)
 
                 nn.init.xavier_uniform_(self.advantage.weight)
                 nn.init.zeros_(self.advantage.bias)

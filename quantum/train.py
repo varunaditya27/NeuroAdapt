@@ -278,7 +278,7 @@ def _build_optimiser(
     quantum_head_lr: Optional[float] = None,
 ):
     if model_type == "quantum":
-        q_lr = quantum_layer_lr if quantum_layer_lr is not None else 8e-4
+        q_lr = quantum_layer_lr if quantum_layer_lr is not None else 1.2e-3
         h_lr = quantum_head_lr if quantum_head_lr is not None else 5e-5
         
         params = [
@@ -492,7 +492,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=str, default=DEFAULT_DATA_DIR)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=EPSILON_DECAY_EP)
     parser.add_argument("--classical-hidden-dim", type=int, default=DEFAULT_CLASSICAL_HIDDEN_DIM)
-    parser.add_argument("--quantum-layer-lr", type=float, default=8e-4)
+    parser.add_argument("--quantum-layer-lr", type=float, default=1.2e-3)
     parser.add_argument("--quantum-head-lr", type=float, default=5e-5)
     parser.add_argument("--reward-mode", choices=["dataset", "exp-distance"], default="exp-distance")
     parser.add_argument("--actions", type=int, default=N_ACTIONS, help="Number of actions (output head size). Default matches shared_config.")
