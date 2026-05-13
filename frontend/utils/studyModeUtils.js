@@ -60,12 +60,14 @@ export function computeStudyModePrefDelta(suggestedMode, userChosenMode) {
  * @param {string} sessionId - Current session ID
  * @returns {Promise<string|null>} - Recommended study mode or null
  */
-export async function fetchModelStudyModeRecommendation(sessionId) {
+export async function fetchModelStudyModeRecommendation(sessionId, studyMode = null) {
   try {
-    const response = await fetch(
-      `/api/action?session_id=${encodeURIComponent(sessionId)}`,
-      { cache: 'no-store' }
-    );
+    const params = new URLSearchParams({ session_id: sessionId });
+    if (studyMode) {
+      params.set('study_mode', studyMode);
+    }
+
+    const response = await fetch(`/api/action?${params.toString()}`, { cache: 'no-store' });
 
     if (!response.ok) {
       console.warn('[StudyModeUtils] Failed to fetch action:', {

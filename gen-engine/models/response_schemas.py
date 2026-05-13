@@ -49,6 +49,7 @@ class ContentPayload(BaseModel):
     video_url: Optional[str] = Field(None, description="Generated animation/video URL")
     audio_url: Optional[str] = Field(None, description="Generated audio URL")
     metadata_vtt: Optional[str] = Field(None, description="WebVTT caption file URL for video sync")
+    transcript: Optional[str] = Field(None, description="Narration transcript text")
     word_timestamps: Optional[List[WordTimestamp]] = Field(
         None, description="Per-word timing for dyslexia support"
     )

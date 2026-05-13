@@ -9,6 +9,7 @@ from typing import Any, Dict
 from uuid import uuid4
 
 from generators.analogy_engine import generate_analogies
+from generators.audio_narration import generate_audio_narration
 from generators.chunk_renderer import chunk_text
 from generators.image_gen import generate_image
 from generators.kokoro_tts import generate_tts
@@ -19,7 +20,7 @@ from generators.text_simplify import simplify_text
 from models.request_schemas import GenerateRequest
 from orchestration.hyperfocus_gate import check_hyperfocus
 from orchestration.latency_budget import fallback_for, get_timeout_seconds, run_with_timeout
-from utils.av_sync import generate_webvtt_metadata
+from utils.av_sync import generate_webvtt_metadata, mux_audio_into_video
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,7 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
     session_id = _safe_session_id(request_data)
     concept = str(request_data.get("concept") or "").strip() or slide_content[:80]
     state_vector = request_data.get("state_vector") or {}
+    study_mode = str(request_data.get("study_mode") or "").strip().lower()
 
     if action_id == 1:
         chunked = chunk_text(slide_content, chunk_strategy="sentence")
@@ -192,22 +194,42 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
         return result
 
     if action_id == 3:
-        content_type = _resolved_content_type(request_data)
-
-        if content_type == "audio":
+        if study_mode == "audio":
             res, timed_out, _, error = run_with_timeout(
-                generate_tts,
+                generate_audio_narration,
                 get_timeout_seconds("audio"),
                 slide_content,
+                learner_level,
                 request_data.get("voice_profile"),
-                0.85,
                 request_data.get("learner_id"),
                 session_id,
             )
             if timed_out:
                 return fallback_for("audio", original_text=slide_content)
             if error:
-                return {"warning": f"Audio generation failed: {error}"}
+                payload = fallback_for("audio", original_text=slide_content)
+                payload["warning"] = f"Audio narration failed: {error}"
+                return payload
+            return res
+
+        content_type = _resolved_content_type(request_data)
+
+        if content_type == "audio":
+            res, timed_out, _, error = run_with_timeout(
+                generate_audio_narration,
+                get_timeout_seconds("audio"),
+                slide_content,
+                learner_level,
+                request_data.get("voice_profile"),
+                request_data.get("learner_id"),
+                session_id,
+            )
+            if timed_out:
+                return fallback_for("audio", original_text=slide_content)
+            if error:
+                payload = fallback_for("audio", original_text=slide_content)
+                payload["warning"] = f"Audio generation failed: {error}"
+                return payload
             return res
 
         if content_type == "avatar":
@@ -296,20 +318,30 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
                     speed=speed,
                     session_id=session_id,
                 )
-                
+
                 # Attach animation beats to audio response for sync
                 response = {**anim_res, **audio_res}
                 if narration and narration.get("beats"):
                     response["animation_beats"] = narration["beats"]
-                
-                # Generate WebVTT metadata file for frontend sync
+
+                # Mux audio into the video so the MP4 includes sound
                 video_url = str(anim_res.get("video_url", ""))
-                if video_url:
+                audio_url = str(audio_res.get("audio_url", ""))
+                if video_url and audio_url:
+                    muxed_path = mux_audio_into_video(video_url, audio_url)
+                    if muxed_path:
+                        response["video_url"] = str(muxed_path)
+                        response["audio_url"] = None
+                        response["muxed_audio"] = True
+
+                # Generate WebVTT metadata file for frontend sync
+                final_video_url = str(response.get("video_url", ""))
+                if final_video_url:
                     try:
                         # Create VTT path next to video file (same stem)
-                        video_path = Path(video_url)
+                        video_path = Path(final_video_url)
                         vtt_path = video_path.parent / f"{video_path.stem}_sync.vtt"
-                        
+
                         generate_webvtt_metadata(
                             output_path=vtt_path,
                             duration_ms=anim_res.get("duration_ms", 0),
@@ -320,7 +352,7 @@ def _generate_payload_for_action(action_id: int, request_data: dict[str, Any]) -
                         response["metadata_vtt"] = str(vtt_path)
                     except Exception as exc:
                         logger.warning(f"WebVTT generation failed: {exc}")
-                
+
                 return response
 
             # animation function already returned fallback details
@@ -391,6 +423,7 @@ def route_and_generate(request: GenerateRequest) -> Dict[str, Any]:
     request_data["confidence"] = request_data.get("confidence") or 0.5
     request_data["concept"] = request_data.get("concept")
     request_data["content_type"] = request_data.get("content_type")
+    request_data["study_mode"] = request_data.get("study_mode")
     request_data["learner_id"] = request_data.get("learner_id")
     request_data["voice_profile"] = request_data.get("voice_profile")
     request_data["source_image"] = request_data.get("source_image")

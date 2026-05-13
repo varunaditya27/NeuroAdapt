@@ -202,19 +202,21 @@ def extract_word_timestamps_with_confidence(
     Fetch proportional word timestamps from the kokoro-tts service.
     Falls back to local proportional computation if the service is unavailable.
     """
-    try:
-        response = requests.get(
-            f"{_base_url()}/v1/audio/timestamps",
-            params={"audio_path": audio_path, "text": text or ""},
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-        stamps = data.get("timestamps")
-        if isinstance(stamps, list) and stamps:
-            return stamps, "proportional"
-    except Exception:
-        pass
+    timestamps_endpoint = os.getenv("KOKORO_TTS_TIMESTAMPS_URL")
+    if timestamps_endpoint:
+        try:
+            response = requests.get(
+                timestamps_endpoint,
+                params={"audio_path": audio_path, "text": text or ""},
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            stamps = data.get("timestamps")
+            if isinstance(stamps, list) and stamps:
+                return stamps, "proportional"
+        except Exception:
+            pass
 
     duration_ms = _duration_from_wav(Path(audio_path))
     return _proportional_word_timestamps(text or "", duration_ms), "proportional_local"

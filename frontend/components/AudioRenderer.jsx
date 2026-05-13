@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import TextRenderer from './TextRenderer';
+import { useEffect, useRef, useState } from 'react';
 import { splitIntoChunks } from '@/utils/splitIntoChunks';
 
 /**
@@ -12,10 +11,30 @@ export default function AudioRenderer({
   content = {},
 }) {
   const [playbackRate, setPlaybackRate] = useState(1);
+  const audioRef = useRef(null);
 
   const src = content.audio_url || content.src || '';
-  const transcript = content.transcript || '';
+  const transcriptValue =
+    content.transcript ||
+    content.simplified_text ||
+    content.text ||
+    content.narration?.script ||
+    '';
+  const transcript = Array.isArray(transcriptValue)
+    ? transcriptValue.join(' ')
+    : String(transcriptValue || '');
   const title = content.title || '';
+  const audioType = src.endsWith('.wav')
+    ? 'audio/wav'
+    : src.endsWith('.mp3')
+      ? 'audio/mpeg'
+      : undefined;
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
 
   if (!src) {
     return (
@@ -64,13 +83,19 @@ export default function AudioRenderer({
         }}
       >
         <audio
+          ref={audioRef}
           controls
+          onLoadedMetadata={() => {
+            if (audioRef.current) {
+              audioRef.current.playbackRate = playbackRate;
+            }
+          }}
           style={{
             width: '100%',
             marginBottom: '12px',
           }}
         >
-          <source src={src} type="audio/mpeg" />
+          <source src={src} type={audioType} />
           Your browser does not support the audio element.
         </audio>
 
@@ -118,25 +143,39 @@ export default function AudioRenderer({
 
       {/* Transcript Section */}
       {transcriptChunks.length > 0 ? (
-        <div>
+        <div
+          style={{
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: '16px 18px',
+          }}
+        >
           <h2
             style={{
               fontSize: '18px',
               fontWeight: 500,
               color: 'var(--navy)',
-              marginBottom: '16px',
+              marginBottom: '12px',
             }}
           >
             Transcript
           </h2>
-          <TextRenderer
-            content={{
-              chunks: transcriptChunks,
-            }}
-            onChunkComplete={() => {
-              // Transcript complete — do nothing, student can continue
-            }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {transcriptChunks.map((chunk, idx) => (
+              <p
+                key={`${idx}-${chunk.slice(0, 12)}`}
+                style={{
+                  margin: 0,
+                  fontSize: '15px',
+                  lineHeight: 1.7,
+                  color: 'var(--text)',
+                }}
+              >
+                {chunk}
+              </p>
+            ))}
+          </div>
         </div>
       ) : (
         <div style={{ color: 'var(--muted)' }}>No transcript available</div>

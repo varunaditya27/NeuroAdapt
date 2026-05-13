@@ -124,6 +124,10 @@ class GenerateRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1)
     state_vector: dict[str, Any] | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    study_mode: str | None = Field(
+        default=None,
+        description="Current study mode context (text|audio|video|quiz)",
+    )
     content_type: str | None = None
     concept: str | None = None
     learner_id: str | None = None

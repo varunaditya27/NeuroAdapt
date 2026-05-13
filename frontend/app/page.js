@@ -6,6 +6,7 @@ import PreferenceDelta from '@/components/PreferenceDelta';
 import StudyModeConfirmation from '@/components/StudyModeConfirmation';
 import QuizRenderer from '@/components/QuizRenderer';
 import VideoRenderer from '@/components/VideoRenderer';
+import TextRenderer from '@/components/TextRenderer';
 import SensoryBreak from '@/components/SensoryBreak';
 import Loader from '@/components/Loader';
 import {
@@ -38,6 +39,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [showPreferenceDelta, setShowPreferenceDelta] = useState(false);
   const [showStudyModeRecommendation, setShowStudyModeRecommendation] = useState(false);
+  const [studyModeManualOpen, setStudyModeManualOpen] = useState(false);
   const [isLessonCompletionMode, setIsLessonCompletionMode] = useState(false); // Track if modal opened from lesson completion
   const [selectedFormat, setSelectedFormat] = useState('text');
   const [currentStudyMode, setCurrentStudyMode] = useState('text'); // Active study mode
@@ -208,7 +210,8 @@ export default function Home() {
       const dynamicPreferenceDelta = await computePreferenceDelta(
         sessionIdRef.current,
         format,
-        selectedFormat // current format before update
+        selectedFormat, // current format before update
+        currentStudyMode
       );
 
       // Update Observer with the calculated preference delta
@@ -290,16 +293,29 @@ export default function Home() {
     }
   };
 
+  const studyModeToActionId = (mode) => {
+    const mapping = {
+      text: 2,
+      video: 3,
+      audio: 3,
+      quiz: 4,
+    };
+    return mapping[mode] ?? null;
+  };
+
   /**
    * Fetch model recommendation and show confirmation modal if it differs from current mode
    * Called at lesson completion or on-demand from sidebar
    */
-  const fetchAndShowRecommendation = async () => {
+  const fetchAndShowRecommendation = async ({ forceOpen = false } = {}) => {
     try {
       console.log('[Home] Fetching study mode recommendation for session:', sessionIdRef.current);
 
       // Fetch model's recommended study mode
-      const recommendedMode = await fetchModelStudyModeRecommendation(sessionIdRef.current);
+      const recommendedMode = await fetchModelStudyModeRecommendation(
+        sessionIdRef.current,
+        currentStudyMode
+      );
 
       console.log('[Home] Recommendation result:', {
         suggestedMode: recommendedMode,
@@ -311,8 +327,14 @@ export default function Home() {
       setModelSuggestedMode(recommendedMode);
 
       // Show modal only if suggestion differs from current mode
-      if (shouldShowRecommendation(currentStudyMode, recommendedMode)) {
+      const shouldShow = shouldShowRecommendation(currentStudyMode, recommendedMode);
+      if (shouldShow) {
         console.log('[Home] ✓ Showing study mode recommendation modal');
+        setStudyModeManualOpen(false);
+        setShowStudyModeRecommendation(true);
+      } else if (forceOpen) {
+        console.log('[Home] ↩ Opening manual study mode selector');
+        setStudyModeManualOpen(true);
         setShowStudyModeRecommendation(true);
       } else {
         console.log('[Home] ✗ No different recommendation or no suggestion - not showing modal');
@@ -335,6 +357,7 @@ export default function Home() {
   const handleStudyModeModalClose = () => {
     setShowStudyModeRecommendation(false);
     setModelSuggestedMode(null);
+    setStudyModeManualOpen(false);
     
     // Only navigate back if this modal was opened from lesson completion
     if (isLessonCompletionMode) {
@@ -382,30 +405,40 @@ export default function Home() {
         if (cancelled) return;
         setLastAction(action);
 
-        if (action.gated || action.action_id === 0) {
-          setAdaptiveContent(null);
+        const preferredActionId = studyModeToActionId(currentStudyMode);
+        const hasForcedMode = Boolean(preferredActionId);
+
+        if ((action.gated || action.action_id === 0) && !hasForcedMode) {
           setAdaptiveLoading(false);
           return;
         }
 
         // Track which action is being generated for contextual loading message
-        setAdaptiveLoadingActionId(action.action_id);
+        const generationActionId = preferredActionId ?? action.action_id;
+        setAdaptiveLoadingActionId(generationActionId);
+
+        const payload = {
+          action_id: generationActionId,
+          slide_content: `${currentSlide.heading}\n\n${currentSlide.body}`,
+          learner_level: 'grade8',
+          session_id: sessionIdRef.current,
+          confidence: action.confidence,
+          study_mode: currentStudyMode,
+        };
+
+        if (currentStudyMode === 'video') {
+          payload.content_type = 'video';
+        } else if (currentStudyMode === 'audio') {
+          payload.content_type = 'audio';
+        }
 
         const generateResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action_id: action.action_id,
-            slide_content: `${currentSlide.heading}\n\n${currentSlide.body}`,
-            learner_level: 'grade8',
-            session_id: sessionIdRef.current,
-            confidence: action.confidence,
-            study_mode: currentStudyMode,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (generateResponse.status === 204) {
-          setAdaptiveContent(null);
           return;
         }
         if (!generateResponse.ok) {
@@ -419,7 +452,6 @@ export default function Home() {
       } catch (error) {
         if (!cancelled) {
           setAdaptiveError(error instanceof Error ? error.message : String(error));
-          setAdaptiveContent(null);
         }
       } finally {
         if (!cancelled) {
@@ -434,7 +466,15 @@ export default function Home() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [view, currentSlideIndex, currentSlide]);
+  }, [view, currentSlideIndex, currentSlide, currentStudyMode]);
+
+  useEffect(() => {
+    if (view === 'lesson') {
+      setAdaptiveContent(null);
+      setAdaptiveError(null);
+      setAdaptiveLoadingActionId(null);
+    }
+  }, [view, currentSlideIndex, currentStudyMode, selectedTopic]);
 
   // Handle sensory break trigger when action_id = 5
   useEffect(() => {
@@ -495,6 +535,20 @@ export default function Home() {
       return null;
     }
 
+    // Action 1: Soft nudge (chunked text)
+    if (actionId === 1 && Array.isArray(content.chunks) && content.chunks.length > 0) {
+      return (
+        <div style={{ marginTop: '32px' }}>
+          <TextRenderer
+            content={{
+              title: content.title || 'Quick Read',
+              chunks: content.chunks.map((chunk) => chunk.text ?? chunk),
+            }}
+          />
+        </div>
+      );
+    }
+
     // Action 4: Quiz
     if (actionId === 4 && Array.isArray(content.quiz_json) && content.quiz_json.length > 0) {
       const mappedQuiz = {
@@ -530,7 +584,7 @@ export default function Home() {
       );
     }
 
-    // Video + Audio + Text (Actions 1, 3)
+    // Video + Audio + Text (Action 3)
     if (content.video_url) {
       console.log('[Home] Rendering video with metadata:', { video: content.video_url, vtt: content.metadata_vtt });
       return (
@@ -540,9 +594,20 @@ export default function Home() {
               src: content.video_url,
               title: content.title || 'Adaptive Video',
               captionsUrl: content.metadata_vtt || '',
-              transcript: content.simplified_text || '',
+              transcript:
+                content.transcript ||
+                content.narration?.script ||
+                content.simplified_text ||
+                '',
             }}
           />
+          {content.audio_url && (
+            <audio
+              src={content.audio_url}
+              controls
+              style={{ width: '100%', marginTop: '16px' }}
+            />
+          )}
           {content.simplified_text && (
             <p style={{ marginTop: '24px', padding: '16px', lineHeight: 1.7, backgroundColor: 'rgba(0, 150, 136, 0.05)', borderRadius: '8px' }}>
               {content.simplified_text}
@@ -561,7 +626,11 @@ export default function Home() {
             content={{
               audio_url: content.audio_url,
               src: content.audio_url,
-              transcript: content.transcript || '',
+              transcript:
+                content.transcript ||
+                content.narration?.script ||
+                content.simplified_text ||
+                '',
               title: content.title || '🎵 Narrated Explanation',
             }}
           />
@@ -582,7 +651,7 @@ export default function Home() {
     }
 
     // Text simplification (Action 2)
-    if (content.simplified_text) {
+    if (actionId === 2 && content.simplified_text) {
       return (
         <div style={{ marginTop: '32px', padding: '20px', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'rgba(0, 150, 136, 0.05)' }}>
           <h2 style={{ color: 'var(--navy)', fontSize: '18px', marginBottom: '12px' }}>📖 Simplified Version</h2>
@@ -797,7 +866,7 @@ export default function Home() {
         >
           <button
             type="button"
-            onClick={fetchAndShowRecommendation}
+            onClick={() => fetchAndShowRecommendation({ forceOpen: true })}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -1449,17 +1518,15 @@ export default function Home() {
         open={showStudyModeRecommendation}
         currentMode={currentStudyMode}
         suggestedMode={modelSuggestedMode}
+        allowNoSuggestion={studyModeManualOpen}
         onAccept={(mode) => {
           handleStudyModeChoice('accept', mode);
-          handleStudyModeModalClose();
         }}
         onReject={() => {
           handleStudyModeChoice('reject');
-          handleStudyModeModalClose();
         }}
         onSelectAlternative={(mode) => {
           handleStudyModeChoice('alternative', mode);
-          handleStudyModeModalClose();
         }}
         onClose={handleStudyModeModalClose}
       />

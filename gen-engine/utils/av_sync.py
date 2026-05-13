@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -310,3 +312,132 @@ def generate_av_sync_package(
         "vtt_content": vtt_content,
         "sync_metadata": sync_metadata,
     }
+
+
+def mux_audio_into_video(
+    video_path: str | Path,
+    audio_path: str | Path,
+    output_path: str | Path | None = None,
+) -> Path | None:
+    """
+    Mux a video file with an audio file into a single MP4.
+
+    Returns the output path on success, or None on failure. Uses ffmpeg if
+    available. If output already exists and is newer than inputs, it is reused.
+    """
+    try:
+        video = Path(video_path)
+        audio = Path(audio_path)
+    except Exception:
+        return None
+
+    if not video.exists() or not audio.exists():
+        logger.warning("Mux skipped: missing video or audio input.")
+        return None
+
+    if output_path is None:
+        output_path = video.with_name(f"{video.stem}_with_audio.mp4")
+
+    output = Path(output_path)
+    try:
+        if output.exists():
+            latest_input = max(video.stat().st_mtime, audio.stat().st_mtime)
+            if output.stat().st_mtime >= latest_input:
+                return output
+    except Exception:
+        pass
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        logger.warning("Mux skipped: ffmpeg not available.")
+        return None
+
+    def _probe_duration(target: Path) -> float:
+        if not shutil.which("ffprobe"):
+            return 0.0
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=nokey=1:noprint_wrappers=1",
+                    str(target),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return 0.0
+            return max(0.0, float((result.stdout or "").strip() or 0.0))
+        except Exception:
+            return 0.0
+
+    def _atempo_filter(ratio: float) -> str | None:
+        if ratio <= 0:
+            return None
+        # ffmpeg atempo supports 0.5–2.0 per filter; chain for larger ratios.
+        parts: list[float] = []
+        value = float(ratio)
+        while value > 2.0:
+            parts.append(2.0)
+            value /= 2.0
+        while value < 0.5:
+            parts.append(0.5)
+            value /= 0.5
+        parts.append(value)
+        return ",".join(f"atempo={p:.3f}" for p in parts)
+
+    video_duration = _probe_duration(video)
+    audio_duration = _probe_duration(audio)
+    tempo_ratio = audio_duration / video_duration if video_duration > 0 else 0.0
+    needs_video_stretch = tempo_ratio and tempo_ratio > 1.01
+    video_pts = f"setpts={tempo_ratio:.6f}*PTS" if needs_video_stretch else None
+
+    cmd = [ffmpeg, "-y", "-i", str(video), "-i", str(audio)]
+
+    if video_pts:
+        cmd.extend([
+            "-filter_complex",
+            f"[0:v]{video_pts}[v]",
+            "-map",
+            "[v]",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-preset",
+            "veryfast",
+        ])
+    else:
+        cmd.extend([
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+        ])
+
+    cmd.extend(["-shortest", str(output)])
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return output
+    except subprocess.CalledProcessError as exc:
+        logger.warning(
+            "Mux failed: ffmpeg returned %s. stderr: %s",
+            exc.returncode,
+            (exc.stderr or "").strip()[:500],
+        )
+    except Exception as exc:
+        logger.warning("Mux failed: %s", exc)
+
+    return None
