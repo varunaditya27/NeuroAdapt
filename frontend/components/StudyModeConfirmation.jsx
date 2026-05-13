@@ -14,12 +14,14 @@ export default function StudyModeConfirmation({
   open = false,
   currentMode = 'text',
   suggestedMode = null,
+  allowNoSuggestion = false,
   onAccept = () => {},
   onReject = () => {},
   onSelectAlternative = () => {},
   onClose = () => {},
 }) {
   const containerRef = useRef(null);
+  const hasRecommendation = Boolean(suggestedMode && suggestedMode !== currentMode);
 
   // Trap focus inside modal
   useFocusTrap(containerRef, open);
@@ -30,22 +32,24 @@ export default function StudyModeConfirmation({
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        onReject?.();
+        if (hasRecommendation) {
+          onReject?.();
+        }
         onClose?.();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onReject, onClose]);
+  }, [open, hasRecommendation, onReject, onClose]);
 
   // Only show if we have a suggestion that differs from current mode
-  if (!open || !suggestedMode || suggestedMode === currentMode) {
+  if (!open || (!allowNoSuggestion && !hasRecommendation)) {
     return null;
   }
 
   const currentModeInfo = STUDY_MODES[currentMode];
-  const suggestedModeInfo = STUDY_MODES[suggestedMode];
+  const suggestedModeInfo = suggestedMode ? STUDY_MODES[suggestedMode] : null;
 
   // All available modes for the alternative selection
   const allModes = Object.entries(STUDY_MODES).map(([key, info]) => ({
@@ -92,7 +96,9 @@ export default function StudyModeConfirmation({
         onClick={(e) => {
           // Close only if clicking on the backdrop, not the modal
           if (e.target === e.currentTarget) {
-            onReject?.();
+            if (hasRecommendation) {
+              onReject?.();
+            }
             onClose?.();
           }
         }}
@@ -122,7 +128,7 @@ export default function StudyModeConfirmation({
                 marginBottom: '12px',
               }}
             >
-              Suggested Study Mode
+              {hasRecommendation ? 'Suggested Study Mode' : 'Choose a Study Mode'}
             </h2>
 
             <p
@@ -134,125 +140,135 @@ export default function StudyModeConfirmation({
                 lineHeight: '1.5',
               }}
             >
-              Based on your recent performance and interaction patterns, we recommend
-              switching to <strong>{suggestedModeInfo?.label}</strong>. Would you like to switch?
+              {hasRecommendation ? (
+                <>
+                  Based on your recent performance and interaction patterns, we recommend
+                  switching to <strong>{suggestedModeInfo?.label}</strong>. Would you like to switch?
+                </>
+              ) : (
+                <>Select the mode that works best for you right now.</>
+              )}
             </p>
           </div>
 
-          {/* Current vs Suggested Mode Comparison */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '16px',
-              marginBottom: '32px',
-            }}
-          >
-            {/* Current Mode */}
-            <div
-              style={{
-                padding: '16px',
-                border: '2px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                backgroundColor: 'var(--surface)',
-              }}
-            >
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>
-                Current Mode
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--navy)' }}>
-                {currentModeInfo?.icon} {currentModeInfo?.label}
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
-                {currentModeInfo?.description}
-              </div>
-            </div>
+          {hasRecommendation && (
+            <>
+              {/* Current vs Suggested Mode Comparison */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                  marginBottom: '32px',
+                }}
+              >
+                {/* Current Mode */}
+                <div
+                  style={{
+                    padding: '16px',
+                    border: '2px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    backgroundColor: 'var(--surface)',
+                  }}
+                >
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>
+                    Current Mode
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--navy)' }}>
+                    {currentModeInfo?.icon} {currentModeInfo?.label}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
+                    {currentModeInfo?.description}
+                  </div>
+                </div>
 
-            {/* Suggested Mode */}
-            <div
-              style={{
-                padding: '16px',
-                border: '2px solid var(--teal)',
-                borderRadius: 'var(--radius)',
-                backgroundColor: 'rgba(42, 157, 143, 0.05)',
-              }}
-            >
-              <div style={{ fontSize: '12px', color: 'var(--teal)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>
-                ✨ Recommended
+                {/* Suggested Mode */}
+                <div
+                  style={{
+                    padding: '16px',
+                    border: '2px solid var(--teal)',
+                    borderRadius: 'var(--radius)',
+                    backgroundColor: 'rgba(42, 157, 143, 0.05)',
+                  }}
+                >
+                  <div style={{ fontSize: '12px', color: 'var(--teal)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>
+                    ✨ Recommended
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--teal)' }}>
+                    {suggestedModeInfo?.icon} {suggestedModeInfo?.label}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
+                    {suggestedModeInfo?.description}
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--teal)' }}>
-                {suggestedModeInfo?.icon} {suggestedModeInfo?.label}
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
-                {suggestedModeInfo?.description}
-              </div>
-            </div>
-          </div>
 
-          {/* Primary Action Buttons */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '24px',
-            }}
-          >
-            {/* Accept Button */}
-            <button
-              onClick={handleAccept}
-              style={{
-                padding: '12px 20px',
-                backgroundColor: 'var(--teal)',
-                color: 'white',
-                border: 'none',
-                borderRadius: 'var(--radius)',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--teal-dark)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(42, 157, 143, 0.2)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--teal)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              Switch to Recommended
-            </button>
+              {/* Primary Action Buttons */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                  marginBottom: '24px',
+                }}
+              >
+                {/* Accept Button */}
+                <button
+                  onClick={handleAccept}
+                  style={{
+                    padding: '12px 20px',
+                    backgroundColor: 'var(--teal)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 'var(--radius)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 200ms ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--teal-dark)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(42, 157, 143, 0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--teal)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  Switch to Recommended
+                </button>
 
-            {/* Reject Button */}
-            <button
-              onClick={handleReject}
-              style={{
-                padding: '12px 20px',
-                backgroundColor: 'transparent',
-                color: 'var(--navy)',
-                border: '2px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 200ms ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--navy)';
-                e.currentTarget.style.backgroundColor = 'var(--surface)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border)';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              Keep Current Mode
-            </button>
-          </div>
+                {/* Reject Button */}
+                <button
+                  onClick={handleReject}
+                  style={{
+                    padding: '12px 20px',
+                    backgroundColor: 'transparent',
+                    color: 'var(--navy)',
+                    border: '2px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 200ms ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--navy)';
+                    e.currentTarget.style.backgroundColor = 'var(--surface)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  Keep Current Mode
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Alternative Modes Section */}
-          <div style={{ marginTop: '32px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
+          <div style={{ marginTop: hasRecommendation ? '32px' : '0', borderTop: hasRecommendation ? '1px solid var(--border)' : 'none', paddingTop: hasRecommendation ? '24px' : '0' }}>
             <p
               style={{
                 fontSize: '13px',
@@ -263,7 +279,7 @@ export default function StudyModeConfirmation({
                 textTransform: 'uppercase',
               }}
             >
-              Or choose a different mode:
+              {hasRecommendation ? 'Or choose a different mode:' : 'Choose a mode:'}
             </p>
 
             <div
@@ -326,8 +342,38 @@ export default function StudyModeConfirmation({
               color: 'var(--muted)',
             }}
           >
-            <strong>Tip:</strong> Press ESC to keep your current mode, or click the backdrop to close.
+            <strong>Tip:</strong> Press ESC to close, or click the backdrop to exit.
           </div>
+
+          {!hasRecommendation && (
+            <div style={{ marginTop: '20px' }}>
+              <button
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '12px 20px',
+                  backgroundColor: 'transparent',
+                  color: 'var(--navy)',
+                  border: '2px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 200ms ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--navy)';
+                  e.currentTarget.style.backgroundColor = 'var(--surface)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                Close
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Portal>
