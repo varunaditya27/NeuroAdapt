@@ -30,6 +30,8 @@ let mouseSamples = []; // Array of {timestamp, x, y}
 let visibilityHiddenCount = 0;
 let preferenceDelta = 1.0; // Initialize to 1.0: users staying in default text mode are rewarded
 
+console.log('[Observer] Module loaded with initial preferenceDelta:', preferenceDelta);
+
 // Lesson tracking state (for event-based completion flushing)
 let lessonStartTime = null;
 let lessonMetadata = null; // {subject, topic, total_slides, current_slide}
@@ -218,7 +220,15 @@ function computeStateVector() {
   const focus = computeFocusPersistence();
   const stall = computeStallDuration();
 
-  return [dwellRatio, jitter, focus, stall, preferenceDelta];
+  const vector = [dwellRatio, jitter, focus, stall, preferenceDelta];
+  
+  console.log('[Observer] computeStateVector() called:', {
+    preferenceDelta_current: preferenceDelta,
+    vector_computed: vector,
+    timestamp: new Date().toLocaleTimeString(),
+  });
+
+  return vector;
 }
 
 /**
@@ -316,11 +326,14 @@ function setPreferenceDelta(value) {
   const oldValue = preferenceDelta;
   preferenceDelta = newValue;
 
-  console.log('[Observer] Preference Delta Updated:', {
-    old: oldValue,
-    new: newValue,
+  console.log('[Observer] setPreferenceDelta() called:', {
+    input: value,
+    clamped: newValue,
+    oldValue,
+    newValue,
     changed: oldValue !== newValue,
     timestamp: new Date().toLocaleTimeString(),
+    stackTrace: new Error().stack.split('\n').slice(1, 4).join('\n'),
   });
 }
 
@@ -337,7 +350,14 @@ function startLesson(metadata) {
     current_slide: metadata?.current_slide || 0,
   };
 
-  console.log('[Observer] Lesson started:', {
+  // RESET: Reset preference delta to default when new lesson starts
+  // Each lesson should start fresh with neutral preference
+  const oldPrefDelta = preferenceDelta;
+  preferenceDelta = 1.0;
+
+  console.log('[Observer] ⭐ LESSON START - RESETTING PREFERENCE DELTA:', {
+    oldPrefDelta,
+    newPrefDelta: preferenceDelta,
     metadata: lessonMetadata,
     startTime: new Date(lessonStartTime).toLocaleTimeString(),
   });
@@ -358,17 +378,19 @@ async function endLesson(metadata = null) {
   const stateVector = computeStateVector();
   const [dwell, jitter, focus, stall, pref_delta] = stateVector;
 
+  console.log('[Observer] 🛑 LESSON END - STATE VECTOR AT COMPLETION:', {
+    pref_delta_value: pref_delta,
+    preferenceDelta_module: preferenceDelta,
+    durationMs: duration,
+    lessonMetadata,
+    fullVector: { dwell, jitter, focus, stall, pref_delta },
+    timestamp: new Date().toLocaleTimeString(),
+  });
+
   // Update metadata if provided (e.g., final slide count)
   if (metadata) {
     lessonMetadata = { ...lessonMetadata, ...metadata };
   }
-
-  console.log('[Observer] Lesson ending with immediate flush:', {
-    durationMs: duration,
-    lessonMetadata,
-    stateVector: { dwell, jitter, focus, stall, pref_delta },
-    timestamp: new Date().toLocaleTimeString(),
-  });
 
   try {
     const payload = {

@@ -43,6 +43,7 @@ export default function Home() {
   const [isLessonCompletionMode, setIsLessonCompletionMode] = useState(false); // Track if modal opened from lesson completion
   const [selectedFormat, setSelectedFormat] = useState('text');
   const [currentStudyMode, setCurrentStudyMode] = useState('text'); // Active study mode
+  const [lessonStartStudyMode, setLessonStartStudyMode] = useState('text'); // Study mode when lesson started (for comparison)
   const [modelSuggestedMode, setModelSuggestedMode] = useState(null); // Latest model suggestion
   const [showSensoryBreak, setShowSensoryBreak] = useState(false); // Sensory break overlay active
   const [adaptiveContent, setAdaptiveContent] = useState(null);
@@ -51,6 +52,7 @@ export default function Home() {
   const [adaptiveError, setAdaptiveError] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const [lessonDuration, setLessonDuration] = useState(0);
+  const [isEndingLesson, setIsEndingLesson] = useState(false); // Loading state for end lesson flow
   const sessionIdRef = useRef(null);
   const lessonStartTimeRef = useRef(null);
   const currentLessonTopicRef = useRef(null); // Track which lesson is active to detect topic changes
@@ -80,6 +82,10 @@ export default function Home() {
   // Track lesson start/end for telemetry
   useEffect(() => {
     if (view === 'lesson' && selectedTopic) {
+      // CAPTURE: Store what study mode we started this lesson with
+      // This will be used to determine if modal should show
+      setLessonStartStudyMode(currentStudyMode);
+      
       startLesson({
         subject: selectedSubjectId,
         topic: selectedTopic.topicId,
@@ -87,7 +93,7 @@ export default function Home() {
         current_slide: currentSlideIndex,
       });
       lessonStartTimeRef.current = Date.now();
-      console.log('[Home] Lesson started:', { subject: selectedSubjectId, topic: selectedTopic.topicId });
+      console.log('[Home] Lesson started:', { subject: selectedSubjectId, topic: selectedTopic.topicId, startingStudyMode: currentStudyMode });
     } else if (view !== 'lesson' && lessonStartTimeRef.current) {
       // Exiting a lesson - trigger completion telemetry
       endLesson({
@@ -146,43 +152,83 @@ export default function Home() {
   };
 
   const handleEndLesson = async () => {
-    // Explicitly end the lesson and send telemetry
-    const duration = await endLesson({
-      current_slide: currentSlideIndex,
-      total_slides: currentSlides.length,
-      explicitly_ended: true,
-    });
-    setLessonDuration(duration);
-    lessonStartTimeRef.current = null;
-
-    // Post feedback so reward signal is stored in replay_buffer (closes the RLHF loop)
-    await postFeedback('complete');
-
-    // Pre-fetch the model's recommended next action
-    try {
-      const res = await fetch(
-        `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}&study_mode=${encodeURIComponent(currentStudyMode)}`,
-        { cache: 'no-store' }
-      );
-      if (res.ok) {
-        const action = await res.json();
-        setLastAction(action);
-        console.log('[Home] Next recommended action:', action.action_name);
-      }
-    } catch (err) {
-      console.warn('[Home] Failed to pre-fetch next action:', err);
+    // Prevent multiple clicks
+    if (isEndingLesson) {
+      console.warn('[Home] End lesson already in progress');
+      return;
     }
-    
-    // Mark that modal is being opened from lesson completion
-    setIsLessonCompletionMode(true);
-    
-    // Fetch and show study mode recommendation if applicable
-    await fetchAndShowRecommendation();
-    
-    // Note: Navigation back to topics happens only after user confirms/dismisses recommendation
-    // (or after modal closes if no recommendation)
-    
-    console.log('[Home] Lesson explicitly ended:', { durationMs: duration });
+
+    setIsEndingLesson(true);
+
+    try {
+      // Explicitly end the lesson and send telemetry
+      const duration = await endLesson({
+        current_slide: currentSlideIndex,
+        total_slides: currentSlides.length,
+        explicitly_ended: true,
+      });
+      setLessonDuration(duration);
+      lessonStartTimeRef.current = null;
+
+      // Post feedback so reward signal is stored in replay_buffer (closes the RLHF loop)
+      try {
+        await postFeedback('complete');
+      } catch (err) {
+        console.error('[Home] Error posting completion feedback:', err);
+        // Continue anyway - feedback is not critical for modal to show
+      }
+
+      // Fetch action and show recommendation IN PARALLEL (not sequentially!)
+      // Both need the same /api/action call, so do it once and reuse the result
+      try {
+        const res = await fetch(
+          `/api/action?session_id=${encodeURIComponent(sessionIdRef.current)}&study_mode=${encodeURIComponent(currentStudyMode)}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          const action = await res.json();
+          setLastAction(action);
+          console.log('[Home] Next recommended action:', action.action_name);
+          
+          // Use the fetched action to determine study mode recommendation
+          const recommendedMode = actionIdToStudyMode(action.action_id);
+          setModelSuggestedMode(recommendedMode);
+          
+          // Show modal based on recommendation vs lesson START mode (not current mode)
+          // This way, if user changed modes during the lesson, we still show modal if model recommends something different from starting mode
+          const shouldShow = shouldShowRecommendation(lessonStartStudyMode, recommendedMode);
+          if (shouldShow) {
+            console.log('[Home] ✓ Showing study mode recommendation modal');
+            setStudyModeManualOpen(false);
+            setShowStudyModeRecommendation(true);
+          } else {
+            console.log('[Home] ✗ No different recommendation - showing manual selector as fallback');
+            setStudyModeManualOpen(true);
+            setShowStudyModeRecommendation(true);
+          }
+        } else {
+          throw new Error(`API returned ${res.status}`);
+        }
+      } catch (err) {
+        console.warn('[Home] Failed to fetch action, showing manual selector as fallback:', err);
+        // Fallback: show manual selector so user always sees feedback
+        setStudyModeManualOpen(true);
+        setShowStudyModeRecommendation(true);
+      }
+      
+      // Mark that modal is being opened from lesson completion
+      setIsLessonCompletionMode(true);
+      
+      console.log('[Home] Lesson explicitly ended:', { durationMs: duration });
+    } catch (error) {
+      console.error('[Home] Unexpected error in handleEndLesson:', error);
+      // On error, still show recommendation modal so user sees something happened
+      setIsLessonCompletionMode(true);
+      setStudyModeManualOpen(true);
+      setShowStudyModeRecommendation(true);
+    } finally {
+      setIsEndingLesson(false);
+    }
   };
 
   const handlePrevious = () => {
@@ -317,17 +363,22 @@ export default function Home() {
         currentStudyMode
       );
 
+      // Use lesson start mode if in a lesson, otherwise use current mode
+      const modeToCompareTo = view === 'lesson' ? lessonStartStudyMode : currentStudyMode;
+
       console.log('[Home] Recommendation result:', {
         suggestedMode: recommendedMode,
         currentMode: currentStudyMode,
-        willShow: shouldShowRecommendation(currentStudyMode, recommendedMode),
+        lessonStartMode: lessonStartStudyMode,
+        modeUsedForComparison: modeToCompareTo,
+        willShow: shouldShowRecommendation(modeToCompareTo, recommendedMode),
       });
 
       // Update state with model suggestion
       setModelSuggestedMode(recommendedMode);
 
-      // Show modal only if suggestion differs from current mode
-      const shouldShow = shouldShowRecommendation(currentStudyMode, recommendedMode);
+      // Show modal only if suggestion differs from start mode (if in lesson) or current mode (if not)
+      const shouldShow = shouldShowRecommendation(modeToCompareTo, recommendedMode);
       if (shouldShow) {
         console.log('[Home] ✓ Showing study mode recommendation modal');
         setStudyModeManualOpen(false);
@@ -337,15 +388,18 @@ export default function Home() {
         setStudyModeManualOpen(true);
         setShowStudyModeRecommendation(true);
       } else {
-        console.log('[Home] ✗ No different recommendation or no suggestion - not showing modal');
-        // Auto-close and navigate back if no modal shown
-        handleStudyModeModalClose();
+        console.log('[Home] ✗ No different recommendation or no suggestion - showing manual selector as fallback');
+        // FALLBACK: Show manual selector so user always sees feedback after completing a lesson
+        setStudyModeManualOpen(true);
+        setShowStudyModeRecommendation(true);
       }
     } catch (error) {
       console.error('[Home] Error fetching recommendation:', error);
       setModelSuggestedMode(null);
-      // Navigate back on error
-      handleStudyModeModalClose();
+      // FALLBACK: On error, show manual selector so user sees something happened
+      console.log('[Home] ⚠️ Recommendation fetch failed - showing manual selector as fallback');
+      setStudyModeManualOpen(true);
+      setShowStudyModeRecommendation(true);
     }
   };
 
@@ -1312,26 +1366,32 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleEndLesson}
+                  disabled={isEndingLesson}
                   style={{
                     padding: '10px 16px',
                     border: '1px solid #D97706',
-                    backgroundColor: 'transparent',
+                    backgroundColor: isEndingLesson ? 'rgba(217, 119, 6, 0.1)' : 'transparent',
                     color: '#D97706',
                     borderRadius: '8px',
                     fontSize: '13px',
                     fontWeight: 500,
-                    cursor: 'pointer',
+                    cursor: isEndingLesson ? 'not-allowed' : 'pointer',
                     transition: 'all 200ms ease',
                     pointerEvents: 'auto',
+                    opacity: isEndingLesson ? 0.6 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.05)';
+                    if (!isEndingLesson) {
+                      e.currentTarget.style.backgroundColor = 'rgba(217, 119, 6, 0.05)';
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
+                    if (!isEndingLesson) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
                   }}
                 >
-                  ⏹ End Lesson
+                  {isEndingLesson ? '⏳ Finishing...' : '⏹ End Lesson'}
                 </button>
                 <div style={{ display: 'flex', gap: '12px' }}>
                   {!isFirstSlide && (
