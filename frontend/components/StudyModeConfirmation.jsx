@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { Portal } from './Portal';
 import { STUDY_MODES } from '@/utils/constants';
+import logModalityPreference from '@/utils/logModalityPreference';
 
 /**
  * StudyModeConfirmation Component
@@ -26,12 +27,13 @@ export default function StudyModeConfirmation({
   // Trap focus inside modal
   useFocusTrap(containerRef, open);
 
-  // Handle Escape key - treat as rejection
+  // Escape key - treat as dismissal of the recommendation (user stays in current/standard mode)
   useEffect(() => {
     if (!open) return;
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        logModalityPreference('standard', 'dismissal');
         if (hasRecommendation) {
           onReject?.();
         }
@@ -51,6 +53,14 @@ export default function StudyModeConfirmation({
   const currentModeInfo = STUDY_MODES[currentMode];
   const suggestedModeInfo = suggestedMode ? STUDY_MODES[suggestedMode] : null;
 
+  // Map study mode keys to modality identifiers
+  const studyModeToModality = {
+    text: 'simplified_text',
+    video: 'video',
+    audio: 'audio',
+    quiz: 'quiz',
+  };
+
   // All available modes for the alternative selection
   const allModes = Object.entries(STUDY_MODES).map(([key, info]) => ({
     key,
@@ -58,16 +68,24 @@ export default function StudyModeConfirmation({
   }));
 
   const handleAccept = () => {
+    // Accepting a recommended intervention — log the suggested mode
+    const modality = studyModeToModality[suggestedMode] || 'standard';
+    logModalityPreference(modality, 'acceptance');
     onAccept?.(suggestedMode);
     onClose?.();
   };
 
   const handleReject = () => {
+    // Rejecting — log standard (learner preferred default/current mode)
+    logModalityPreference('standard', 'dismissal');
     onReject?.(currentMode);
     onClose?.();
   };
 
   const handleAlternative = (mode) => {
+    // Selecting an alternative mode — log as selection
+    const modality = studyModeToModality[mode] || 'standard';
+    logModalityPreference(modality, 'selection');
     onSelectAlternative?.(mode);
     onClose?.();
   };
@@ -96,6 +114,7 @@ export default function StudyModeConfirmation({
         onClick={(e) => {
           // Close only if clicking on the backdrop, not the modal
           if (e.target === e.currentTarget) {
+            logModalityPreference('standard', 'dismissal');
             if (hasRecommendation) {
               onReject?.();
             }

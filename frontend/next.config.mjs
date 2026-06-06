@@ -8,6 +8,14 @@ const nextConfig = {
     NEXT_PUBLIC_ACTION_SPACE: '6',
     NEXT_PUBLIC_STATE_VECTOR_DIM: '5',
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:8000/api/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -36,6 +36,15 @@ async def ensure_schema() -> None:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS session_events (
+                id BIGSERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS state_snapshots (
                 id BIGSERIAL PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -89,6 +98,16 @@ async def ensure_schema() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 student_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Session events table - for modality preference and other session-level events
+            """
+            CREATE TABLE IF NOT EXISTS session_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """,

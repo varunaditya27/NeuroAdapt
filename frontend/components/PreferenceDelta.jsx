@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { Portal } from './Portal';
 import { FORMAT_METADATA } from '@/utils/constants';
+import logModalityPreference from '@/utils/logModalityPreference';
 
 /**
  * PreferenceDelta Component
@@ -25,6 +26,8 @@ export default function PreferenceDelta({
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        // Dismissal via Escape logs a standard modality preference
+        logModalityPreference('standard', 'dismissal');
         onClose?.();
       }
     };
@@ -66,6 +69,7 @@ export default function PreferenceDelta({
         onClick={(e) => {
           // Close only if clicking on the backdrop, not the modal
           if (e.target === e.currentTarget) {
+            logModalityPreference('standard', 'dismissal');
             onClose?.();
           }
         }}
@@ -120,7 +124,15 @@ export default function PreferenceDelta({
             {formats.map((format) => (
               <button
                 key={format.key}
-                onClick={() => {
+                 onClick={() => {
+                  // Map UI format keys to modality identifiers
+                  const modalityMap = {
+                    text: 'simplified_text',
+                    video: 'video',
+                    audio: 'audio',
+                    quiz: 'quiz',
+                  };
+                  logModalityPreference(modalityMap[format.key] || 'standard', 'selection');
                   onSelect?.(format.key);
                   onClose?.();
                 }}

@@ -88,6 +88,20 @@ export default function Navbar() {
           >
             Dashboard
           </Link>
+          <Link
+            href="/dashboard/analytics"
+            style={{
+              color: 'var(--text)',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: 500,
+              paddingBottom: '8px',
+              borderBottom: pathname === '/dashboard/analytics' ? '2px solid var(--teal)' : '2px solid transparent',
+              transition: 'border-color 200ms ease',
+            }}
+          >
+            Analytics
+          </Link>
         </div>
       </div>
     </nav>

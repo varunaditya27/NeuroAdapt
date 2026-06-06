@@ -10,6 +10,7 @@ from backend.routers.lessons import router as lessons_router
 from backend.routers.preferences import router as preferences_router
 from backend.routers.state import router as state_router
 from backend.routers.state_history import router as state_history_router
+from backend.routers.analytics import router as analytics_router
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(state_history_router)
     app.include_router(action_router)
     app.include_router(feedback_router)
+    app.include_router(analytics_router)
 
     @app.on_event("startup")
     async def _startup() -> None:

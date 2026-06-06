@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import SensoryBreak from './SensoryBreak';
+import logModalityPreference from '@/utils/logModalityPreference';
 
 /**
  * EnergyBar Component
@@ -18,6 +19,7 @@ export default function EnergyBar({
   const [isActive, setIsActive] = useState(false);
 
   const handleBreakRequest = () => {
+    logModalityPreference('sensory_break', 'selection');
     setIsActive(true);
     setShowBreak(true);
     onBreakRequest?.();

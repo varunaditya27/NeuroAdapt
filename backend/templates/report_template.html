@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NeuroAdapt Analytics Report</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 15mm;
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 9px;
+      color: #888;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #1a1a2e;
+    margin: 0;
+    padding: 0;
+  }
+  .bar-fill {
+  height: 100%;
+  background: #2a9d8f;
+  border-radius: 3px;
+  width: var(--width);
+}
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #2a9d8f;
+    padding-bottom: 12px;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin: 0;
+  }
+  .header .subtitle {
+    font-size: 10px;
+    color: #888;
+    margin-top: 2px;
+  }
+  .header .report-date {
+    font-size: 10px;
+    color: #666;
+    text-align: right;
+  }
+  .section {
+    margin-bottom: 20px;
+    page-break-inside: avoid;
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2a9d8f;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+  }
+  .exec-summary {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .exec-summary .stat {
+    flex: 1;
+    min-width: 100px;
+    background: #f5f7fa;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .exec-summary .stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  .exec-summary .stat .label {
+    font-size: 9px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+  .success {
+  color: #2a9d8f;
+}
+
+  .danger {
+  color: #c0392b;
+}
+
+  .neutral {
+  color: #888;
+}
+  .score-display {
+    font-size: 36px;
+    font-weight: 700;
+    color: #2a9d8f;
+    text-align: center;
+    padding: 16px;
+  }
+  .score-label {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+  }
+  .trend-table, .modality-table, .reward-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+  .trend-table th, .trend-table td,
+  .modality-table th, .modality-table td,
+  .reward-table th, .reward-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+    font-size: 10px;
+  }
+  .trend-table th, .modality-table th, .reward-table th {
+    background: #f5f7fa;
+    font-weight: 600;
+    color: #555;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .delta-positive { color: #2a9d8f; font-weight: 600; }
+  .delta-negative { color: #c0392b; font-weight: 600; }
+  .delta-neutral { color: #888; }
+  .overload-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .overload-stat {
+    flex: 1;
+    min-width: 100px;
+    background: #f5f7fa;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .overload-stat .value { font-size: 18px; font-weight: 700; }
+  .overload-stat .label { font-size: 9px; color: #888; text-transform: uppercase; margin-top: 2px; }
+  .bar-container { margin: 4px 0; display: flex; align-items: center; gap: 8px; }
+  .bar-label { min-width: 110px; font-size: 10px; }
+  .bar-track { flex: 1; height: 14px; background: #eee; border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #2a9d8f; border-radius: 3px; }
+  .bar-value { min-width: 35px; text-align: right; font-size: 10px; font-weight: 600; }
+  .metric-grid {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .metric-card {
+    flex: 1;
+    min-width: 120px;
+    background: #f0f9f8;
+    border: 1px solid #d0ece6;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .metric-card .value { font-size: 18px; font-weight: 700; color: #2a9d8f; }
+  .metric-card .label { font-size: 9px; color: #555; text-transform: uppercase; margin-top: 2px; }
+  .footer {
+    margin-top: 30px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    font-size: 8px;
+    color: #aaa;
+    text-align: center;
+  }
+  .no-data { color: #aaa; font-style: italic; text-align: center; padding: 12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>NeuroAdapt Analytics Report</h1>
+    <div class="subtitle">Cognitive Stability & Learning Modalities</div>
+  </div>
+  <div class="report-date">
+    Generated: {{ report_date }}<br>
+    Learner: {{ learner_name }}
+  </div>
+</div>
+
+<!-- Section 1: Executive Summary -->
+<div class="section">
+  <div class="section-title">Executive Summary</div>
+  <div class="exec-summary">
+    <div class="stat">
+      <div class="value">{{ learner_name }}</div>
+      <div class="label">Learner</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ member_since }}</div>
+      <div class="label">Member Since</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ total_sessions }}</div>
+      <div class="label">Total Sessions</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ current_streak }}</div>
+      <div class="label">Current Streak (days)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 2: Cognitive Stability Overview -->
+<div class="section">
+  <div class="section-title">Cognitive Stability Overview</div>
+  {% if current_score is not none %}
+  <div class="score-display">{{ "%.1f"|format(current_score) }}</div>
+  <div class="score-label">Current Cognitive Stability Score (0–100)</div>
+  {% else %}
+  <div class="no-data">No telemetry data available yet.</div>
+  {% endif %}
+</div>
+
+<!-- Section 3: Stability Trends -->
+<div class="section">
+  <div class="section-title">Stability Trends</div>
+  <table class="trend-table">
+    <thead>
+      <tr>
+        <th>Window</th>
+        <th>Mean Score</th>
+        <th>Delta</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Daily (24h)</td>
+        <td>{{ "%.1f"|format(daily_trend.mean) if daily_trend.mean is not none else "—" }}</td>
+        <td>
+          {% if daily_trend.delta is not none %}
+            <span class="{% if daily_trend.delta > 0 %}delta-positive{% elif daily_trend.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+              {% if daily_trend.delta > 0 %}▲{% elif daily_trend.delta < 0 %}▼{% endif %} {{ "%.1f"|format(daily_trend.delta) }}
+            </span>
+          {% else %}
+            <span class="delta-neutral">—</span>
+          {% endif %}
+        </td>
+        <td>{{ "Sufficient data" if daily_trend.sufficient_data else "Insufficient data" }}</td>
+      </tr>
+      <tr>
+        <td>Weekly (7d)</td>
+        <td>{{ "%.1f"|format(weekly_trend.mean) if weekly_trend.mean is not none else "—" }}</td>
+        <td>
+          {% if weekly_trend.delta is not none %}
+            <span class="{% if weekly_trend.delta > 0 %}delta-positive{% elif weekly_trend.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+              {% if weekly_trend.delta > 0 %}▲{% elif weekly_trend.delta < 0 %}▼{% endif %} {{ "%.1f"|format(weekly_trend.delta) }}
+            </span>
+          {% else %}
+            <span class="delta-neutral">—</span>
+          {% endif %}
+        </td>
+        <td>{{ "Sufficient data" if weekly_trend.sufficient_data else "Insufficient data" }}</td>
+      </tr>
+      <tr>
+        <td>Monthly (30d)</td>
+        <td>{{ "%.1f"|format(monthly_trend.mean) if monthly_trend.mean is not none else "—" }}</td>
+        <td>
+          {% if monthly_trend.delta is not none %}
+            <span class="{% if monthly_trend.delta > 0 %}delta-positive{% elif monthly_trend.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+              {% if monthly_trend.delta > 0 %}▲{% elif monthly_trend.delta < 0 %}▼{% endif %} {{ "%.1f"|format(monthly_trend.delta) }}
+            </span>
+          {% else %}
+            <span class="delta-neutral">—</span>
+          {% endif %}
+        </td>
+        <td>{{ "Sufficient data" if monthly_trend.sufficient_data else "Insufficient data" }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Section 4: Cognitive Overload Summary -->
+<div class="section">
+  <div class="section-title">Cognitive Overload Summary</div>
+  <div class="overload-stats">
+    <div class="overload-stat">
+        <div class="value {% if spikes_this_week > spikes_last_week %}danger{% else %}success{% endif %}">
+            {{ spikes_this_week }}
+        </div>
+        <div class="label">Spikes This Week</div>
+    </div>
+    <div class="overload-stat">
+      <div class="value">{{ spikes_last_week }}</div>
+      <div class="label">Spikes Last Week</div>
+    </div>
+    <div class="overload-stat">
+      <div class="value {% if weekly_delta < 0 %}success{% elif weekly_delta > 0 %}danger{% else %}neutral{% endif %}">
+        {% if weekly_delta > 0 %}▲{% elif weekly_delta < 0 %}▼{% endif %} {{ weekly_delta }}
+     </div>
+      <div class="label">Weekly Delta</div>
+    </div>
+    <div class="overload-stat">
+      <div class="value">{{ "%.1f"|format(avg_spikes_per_session) }}</div>
+      <div class="label">Avg Per Session</div>
+    </div>
+  </div>
+  <div style="margin-top: 10px;">
+    <div class="metric-card" style="max-width: 250px; margin: 0 auto;">
+      <div class="value">{{ sessions_with_zero_spikes }}</div>
+      <div class="label">Sessions with No Overload Moments</div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 5: Preferred Learning Modalities -->
+<div class="section">
+  <div class="section-title">Preferred Learning Modalities</div>
+  {% if not modality_no_data %}
+    <p style="font-size: 10px; color: #888; margin-bottom: 8px;">
+      Based on {{ total_modality_events }} modality preference events (last 30 days)
+    </p>
+    <table class="modality-table">
+      <thead>
+        <tr>
+          <th>Modality</th>
+          <th>Count</th>
+          <th>Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mod, info in modalities.items() %}
+        <tr>
+          <td>{{ mod|replace('_', ' ')|title }}</td>
+          <td>{{ info.count }}</td>
+          <td>{{ "%.0f"|format(info.share * 100) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top: 10px;">
+      {% for mod, info in modalities.items() %}
+      <div class="bar-container">
+        <div class="bar-label">{{ mod|replace('_', ' ')|title }}</div>
+        <div class="bar-track">
+          <div class="bar-fill" style="--width: {{ '%.0f'|format(info.share * 100) }}%;"></div>
+        </div>
+        <div class="bar-value">{{ '%.0f'|format(info.share * 100) }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="no-data">No modality preference data available yet. Preference events are recorded as learners interact with content formats.</div>
+  {% endif %}
+</div>
+
+<!-- Section 6: Intervention Effectiveness -->
+<div class="section">
+  <div class="section-title">Intervention Effectiveness</div>
+  {% if reward_summary and reward_summary|length > 0 %}
+  <table class="reward-table">
+    <thead>
+      <tr>
+        <th>Intervention</th>
+        <th>Count</th>
+        <th>Avg Reward</th>
+        <th>Min</th>
+        <th>Max</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in reward_summary %}
+      <tr>
+        <td>{{ entry.action_name|replace('_', ' ')|title }}</td>
+        <td>{{ entry.count }}</td>
+        <td>{{ "%.3f"|format(entry.avg_reward) }}</td>
+        <td>{{ "%.3f"|format(entry.min_reward) }}</td>
+        <td>{{ "%.3f"|format(entry.max_reward) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="no-data">No intervention reward data available yet.</div>
+  {% endif %}
+</div>
+
+<!-- Section 7: Key Metrics Summary -->
+<div class="section">
+  <div class="section-title">Key Metrics Summary</div>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="value">{{ total_sessions }}</div>
+      <div class="label">Total Sessions</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">{{ total_snapshots }}</div>
+      <div class="label">Total Telemetry Snapshots</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">{{ current_streak }}</div>
+      <div class="label">Current Streak (days)</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">{{ date_range }}</div>
+      <div class="label">Data Range</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  NeuroAdapt &mdash; Analytics Report &mdash; Generated {{ report_date }}
+</div>
+
+</body>
+</html>
