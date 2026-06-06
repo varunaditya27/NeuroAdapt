@@ -26,18 +26,33 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_pdf_report(db: AsyncSession, user_id: str) -> bytes:
-    summary = await get_user_summary(db, user_id)
-    stability = await get_stability(db, user_id)
-    overload = await get_overload(db, user_id)
-    modalities = await get_modalities(db, user_id)
-    reward_data = await _get_reward_summary(db, user_id)
-
-    snapshot_count = await _count_snapshots(db, user_id)
-
-    report_data = _build_report_data(
-        summary, stability, overload, modalities, reward_data, snapshot_count,
+    from backend.routers.analytics import (
+        _PLACEHOLDER_MODALITIES,
+        _PLACEHOLDER_OVERLOAD,
+        _PLACEHOLDER_STABILITY,
+        _PLACEHOLDER_USER_SUMMARY,
     )
 
+    summary = await get_user_summary(db, user_id)
+    if summary.get("total_sessions", 0) == 0:
+        summary = _PLACEHOLDER_USER_SUMMARY
+
+    stability = await get_stability(db, user_id)
+    if stability.get("current_score") is None:
+        stability = _PLACEHOLDER_STABILITY
+
+    overload = await get_overload(db, user_id)
+    if overload.get("spikes_this_week") == 0 and overload.get("sessions_with_zero_spikes") == 0:
+        overload = _PLACEHOLDER_OVERLOAD
+
+    modalities = await get_modalities(db, user_id)
+    if modalities.get("no_data"):
+        modalities = _PLACEHOLDER_MODALITIES
+
+    snapshot_count = await _count_snapshots(db, user_id)
+    report_data = _build_report_data(
+        summary, stability, overload, modalities, await _get_reward_summary(db, user_id), snapshot_count,
+    )
     return _render_pdf(report_data)
 
 
