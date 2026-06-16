@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY . /app/backend
 
+RUN mkdir -p /app/data && chown app:app /app/data
+
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
