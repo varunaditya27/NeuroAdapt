@@ -38,8 +38,23 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - BACKEND_URL=http://backend:8000
+      - BACKEND_INTERNAL_URL=http://backend:8000
+      - GEN_ENGINE_INTERNAL_URL=http://gen-engine:8001
     depends_on:
       - backend
+      - gen-engine
+
+  gen-engine:
+    build:
+      context: ./gen-engine
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./gen-engine/.env
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   redis_data:
